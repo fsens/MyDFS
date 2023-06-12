@@ -1,6 +1,5 @@
 package org.DFSdemo.protocol;
 
-import com.sun.xml.internal.bind.v2.TODO;
 
 /**
  *Client和Namenode之间的通讯协议
@@ -63,8 +62,9 @@ public interface ClientProtocol {
      *
      * @param src 原文件名或者原目录名
      * @param dst 更改后的名字
+     * @return 是否成功更改
      */
-    public void rename2(String src, String dst);
+    public boolean rename2(String src, String dst);
 
 
     /**

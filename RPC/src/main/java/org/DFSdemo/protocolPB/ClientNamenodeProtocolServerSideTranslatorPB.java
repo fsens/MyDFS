@@ -27,7 +27,7 @@ public class ClientNamenodeProtocolServerSideTranslatorPB implements ClientProto
         return null;
     }
 
-    public void rename2(String src, String dst) {
+    public boolean rename2(String src, String dst) {
 
     }
 
