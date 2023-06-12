@@ -39,10 +39,10 @@ public class ClientNamenodeProtocolTranslator implements ClientProtocol {
         proxy.append(request);
     }
 
-    public void rename2(String src, String dst){
+    public boolean rename2(String src, String dst){
         RequestProto request = ProtoUtils.makeProtoRequest(String src, String dst);
 
-        proxy.rename2(request);
+        return proxy.rename2(request);
     }
 
     public boolean mkdirs(String src, FsPermission masked){
