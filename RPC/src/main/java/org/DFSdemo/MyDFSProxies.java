@@ -6,6 +6,9 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 
+/**
+ * 这是一个代理工具类，用来实现获取代理的逻辑
+ */
 public class MyDFSProxies {
 
     /** ProxyInfo封装代理对象 */
