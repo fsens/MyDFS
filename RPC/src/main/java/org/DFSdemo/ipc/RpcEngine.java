@@ -8,6 +8,7 @@ import java.net.InetSocketAddress;
 
 /**
  * 实现RPC的接口
+ * 定义该接口还可以方便扩展序列化引擎
  */
 public interface RpcEngine {
 
