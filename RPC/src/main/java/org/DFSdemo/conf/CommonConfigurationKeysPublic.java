@@ -35,13 +35,13 @@ public class CommonConfigurationKeysPublic {
 
 
     /** MyDFS RPC 服务端 handler 线程个数 */
-    public static final String  MANIS_HANDLER_COUNT_KEY = "dfs.namenode.handler.count";
-    /** MyDFS_HANDLER_COUNT_KEY 的默认值，10 */
-    public static final int MyDFS_HANDLER_COUNT_DEFAULT = 10;
+    public static final String  SERVER_HANDLER_COUNT_KEY = "dfs.server.handler.count";
+    /** SERVER_HANDLER_COUNT_KEY 的默认值，10 */
+    public static final int SERVER_HANDLER_COUNT_DEFAULT = 10;
 
 
     /** Protobuf RPC Server的uri */
-    public static final String MyDFS_RPC_PROTOBUF_KEY = "MyDFS.rpc.uri.protobuf";
+    public static final String SERVER_RPC_PROTOBUF_KEY = "server.rpc.uri.protobuf";
 
 
     /** RPC 服务端 socket 读线程的数量 */
