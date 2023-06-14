@@ -1,10 +1,10 @@
 syntax = "proto3";
 
-option java_package = "org.DFSdemo.protocol";
+option java_package = "org.DFSdemo.protocol.proto";
 option java_outer_classname = "ClientNamenodeProtocolProtos";
 option java_generic_services = true;
 option java_generate_equals_and_hash = true;
-package org.DFSdemo.client;
+package org.DFSdemo.protocol.proto;
 
 /**
   * ClientNamenodeProtocol Service定义了客户端与服务端之间的接口
@@ -20,6 +20,6 @@ message rename2ResponseProto {
    optional bool result = 1;
 }
 
-service ClientMyDFSProtocol{
+service ClientNamenodeProtocol{
    rpc rename2(rename2RequestProto) returns (rename2ResponseProto);
 }
