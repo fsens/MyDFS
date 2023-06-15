@@ -19,9 +19,8 @@ public interface RpcEngine {
      * @param conf 配置
      * @param factory 创建socket的工厂
      * @param rpcTimeout rpc超时时间
-     * @param <T> 表明该方法是个与类无关的泛型方法
      * @return 接口的代理对象
-     * @param <T>
+     * @param <T> 表明该方法是个与类无关的泛型方法
      * @throws IOException
      */
     <T> T getProxy(Class<T> protocol,

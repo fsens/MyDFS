@@ -14,10 +14,10 @@ public class NamenodeClient implements Closeable{
     volatile boolean clientRunning = true;
     final ClientProtocol clientProtocol;
 
-    public NamenodeClient(URI NamenodeUri, Configuration conf) throws IOException {
+    public NamenodeClient(URI namenodeUri, Configuration conf) throws IOException {
         ServerProxies.ProxyInfo<ClientProtocol> proxyInfo = null;
 
-        proxyInfo = ServerProxies.createProxy(conf, NamenodeUri, ClientProtocol.class);
+        proxyInfo = ServerProxies.createProxy(conf, namenodeUri, ClientProtocol.class);
         this.clientProtocol = proxyInfo.getProxy();
     }
 
