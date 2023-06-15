@@ -28,7 +28,7 @@ public class ClientNamenodeProtocolServerSideTranslatorPB implements ClientProto
     }
 
     public boolean rename2(String src, String dst) {
-
+        return false;
     }
 
     public boolean mkdirs(String src, FsPermission masked) {

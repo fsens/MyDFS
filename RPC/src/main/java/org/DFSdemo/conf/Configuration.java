@@ -5,16 +5,16 @@ import java.io.InputStream;
 import java.util.Properties;
 
 /**
- * 这是MyDFS的配置类，程序运行时的配置信息从里面获取
+ * 这是MyDFS RPC的配置类，程序运行时的配置信息从里面获取
  */
 public class Configuration {
     Properties properties;
     public static final String TRUE_STR = "true";
     public static final String FALSE_STR = "false";
 
-    /** 读取配置文件MyDFS.properties */
+    /** 读取配置文件Server.properties */
     public Configuration() throws IOException {
-        InputStream inStream = ClassLoader.getSystemResourceAsStream("MyDFS.properties");
+        InputStream inStream = ClassLoader.getSystemResourceAsStream("Server.properties");
         properties = new Properties();
         properties.load(inStream);
     }

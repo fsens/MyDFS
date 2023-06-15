@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="Encoding">
+  <component name="Encoding" defaultCharsetForPropertiesFiles="UTF-8">
     <file url="file://$PROJECT_DIR$/Client/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/Client/src/main/resources" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/Datanode/src/main/java" charset="UTF-8" />
@@ -8,8 +8,11 @@
     <file url="file://$PROJECT_DIR$/Namenode/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/Namenode/src/main/resources" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/RPC/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/RPC/src/main/proto" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/RPC/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/RPC/target/generated-sources/protobuf/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/src/main/resources" charset="UTF-8" />
+    <file url="PROJECT" charset="UTF-8" />
   </component>
 </project>
