@@ -1,12 +1,10 @@
 package org.DFSdemo.ipc;
 
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import com.google.protobuf.GeneratedMessage;
-import com.google.protobuf.Message;
+import com.google.protobuf.*;
 import org.DFSdemo.conf.Configuration;
 import org.DFSdemo.io.DataOutputOutputStream;
 import org.DFSdemo.io.Writable;
+import org.DFSdemo.protocol.proto.ProtobufRpcEngineProtos.*;
 import org.DFSdemo.util.ProtoUtil;
 
 import javax.net.SocketFactory;
@@ -62,7 +60,13 @@ public class ProtobufRpcEngine implements RpcEngine{
         int getLength();
     }
 
-    private static abstract class BaseRpcMessageWithHeader<T extends GeneratedMessage> implements RpcWrapper{
+    /**
+     * 这是一个序列化和反序列化的基类，该类封装了一些基本的属性和序列化/反序列化方法
+     * 由它的子类来满足不同场景的需要
+     *
+     * @param <T> 泛型，并且指定了泛型的类需要是GeneratedMessageV3的子类
+     */
+    private static abstract class BaseRpcMessageWithHeader<T extends GeneratedMessageV3> implements RpcWrapper{
 
         T requestHeader;//包含了公共信息，如方法名、接口名等
 
@@ -151,4 +155,37 @@ public class ProtobufRpcEngine implements RpcEngine{
                     CodedOutputStream.computeUInt32SizeNoTag(requestLen) + requestLen;
         }
     }
+
+    /**
+     * 该类是BaseRpcMessageWithHeader的子类，用来封装请求
+     * 该类除了 parseHeaderFrom 方法外，其余都复用基类
+     */
+    private static class RpcRequestWrapper extends BaseRpcMessageWithHeader<RequestHeaderProto>{
+        @SuppressWarnings("unused")
+        public RpcRequestWrapper(){};
+
+        public RpcRequestWrapper(RequestHeaderProto requestHeader, Message theRequest){
+            super(requestHeader, theRequest);
+        }
+
+        /**
+         * 在子类中反序列化requestHeader
+         *
+         * @param bytes
+         * @return
+         * @throws IOException
+         */
+        @Override
+        RequestHeaderProto parseHeaderFrom(byte[] bytes) throws IOException{
+            return RequestHeaderProto.parseFrom(bytes);
+        }
+
+        @Override
+        public String toString(){
+            return requestHeader.getDeclaringClassProtocolName() + "." +
+                    requestHeader.getMethodName();
+        }
+    }
+
+
 }
