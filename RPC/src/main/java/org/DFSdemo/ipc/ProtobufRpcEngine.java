@@ -187,5 +187,47 @@ public class ProtobufRpcEngine implements RpcEngine{
         }
     }
 
+    /**
+     * 这是返回值的包装类
+     * 其中反序列化由其子类覆写实现
+     */
+    public static class RpcResponseWrapper implements RpcWrapper{
+        Message theResponse;
+        byte[] theResponseRead;
 
+        public RpcResponseWrapper(){
+        }
+
+        public RpcResponseWrapper(Message theResponse){
+            this.theResponse = theResponse;
+        }
+
+        @Override
+        public void write(DataOutput out) throws IOException{
+            OutputStream os = DataOutputOutputStream.constructDataOutputStream(out);
+
+            theResponse.writeDelimitedTo(os);
+        }
+
+        @Override
+        public void readFields(DataInput in) throws IOException{
+            int len = ProtoUtil.readRawVarInt32(in);
+
+            theResponseRead = new byte[len];
+            in.readFully(theResponseRead);
+        }
+
+        @Override
+        public int getLength(){
+            int resLen = 0;
+            if (theResponse != null){
+                resLen = theResponse.getSerializedSize();
+            } else if (theResponseRead != null) {
+                resLen = theResponseRead.length;
+            }else {
+                throw new IllegalArgumentException("getLength on uninitialized RpcWrapper");
+            }
+            return CodedOutputStream.computeUInt32SizeNoTag(resLen) + resLen;
+        }
+    }
 }
