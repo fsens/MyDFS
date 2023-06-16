@@ -1,6 +1,7 @@
 package org.DFSdemo;
 
 import org.DFSdemo.conf.Configuration;
+import org.DFSdemo.ipc.RPC;
 import org.DFSdemo.protocol.ClientProtocol;
 
 import java.io.Closeable;
@@ -25,8 +26,24 @@ public class NamenodeClient implements Closeable{
         return this.clientProtocol.rename2(src, dst);
     }
 
+    /**
+     * 停止对ClientProtocol的代理
+     */
+    private void closeConnectionToNamenode(){
+        RPC.stopProxy(clientProtocol);
+    }
+
+    /**
+     * 关闭和Namenode的连接，释放资源
+     *
+     * @throws IOException
+     */
     @Override
     public void close() throws IOException{
-
+        if (clientRunning){
+            clientRunning = false;
+            closeConnectionToNamenode();
+        }
     }
+
 }

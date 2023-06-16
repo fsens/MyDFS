@@ -177,9 +177,14 @@ public class ProtobufRpcEngine implements RpcEngine{
             return (Message) newInstMethod.invoke(null, (Object[]) null);
         }
 
+        /**
+         * 停止client
+         *
+         * @throws IOException
+         */
         @Override
         public void close() throws IOException {
-
+            client.stop();
         }
     }
 
