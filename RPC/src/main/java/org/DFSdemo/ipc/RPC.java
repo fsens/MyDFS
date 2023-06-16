@@ -10,11 +10,16 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 该类是一个工具类，该类定义了一些公共的工具方法，方便客户端获取到代理对象
+ * 该类是一个工具类：
+ * 1.该类定义了一些公共的工具方法，方便客户端获取到代理对象
+ * 2.该类定义了枚举类来标识不同的序列化方法
  */
 public class RPC {
 
     public static final String RPC_ENGINE = "rpc.engine";
+
+    //默认的rpc服务类，先定义在这里，以后方便扩展
+    final static int RPC_SERVICE_CLASS_DEFAULT = 0;
 
 
     /**
@@ -75,5 +80,25 @@ public class RPC {
                                          int rpcTimeout)
             throws IOException {
         return getProtocolEngine(protocol, conf).getProxy(protocol, address, conf, factory, rpcTimeout);
+    }
+
+    /**
+     * 定义一各枚举类来标识所用的序列化类型
+     * 定义该类是为了方便扩展
+     */
+    public enum RpcKind{
+        /**
+         * RPC_BUILTIN 默认值
+         * RPC_PROTOCOL_BUFFER ProtobufRpcEngine
+         */
+        RPC_BUILTIN ((short) 1),
+        RPC_PROTOCOL_BUFFER ((short) 2);
+
+        final static int MAX_INDEX = RPC_PROTOCOL_BUFFER.value;
+        public final short value;
+
+        RpcKind(short value){
+            this.value = value;
+        }
     }
 }

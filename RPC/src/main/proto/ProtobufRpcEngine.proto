@@ -1,8 +1,8 @@
-syntax = "proto3";
-
 /**
  * 定义了一些message用于Protocol Buffer RPC Engine
  */
+
+syntax = "proto3";
 
 option java_package = "org.DFSdemo.protocol.proto";
 option java_outer_classname = "ProtobufRpcEngineProtos";

@@ -58,6 +58,11 @@ public class ClientNamenodeProtocolTranslatorPB implements ClientProtocol,Clonea
                 .build();
 
         try {
+            /**
+             * ClientNamenodeProtocolPB继承的ClientNamenodeProtocol.BlockingInterface将rename2方法的参数定义为了：
+             *第一个为控制器，一般为null
+             *第二个才是包装为了rename2RequestProto的请求
+             */
             return rpcProxy.rename2(null, request).getResult();
         }catch (ServiceException e){
             throw new IOException();
