@@ -33,5 +33,25 @@
       <version>4.13.2</version>
       <scope>test</scope>
     </dependency>
+
+    <!-- 日志框架，提供了一个简单的、一致的日志接口，和下面的log4j结合使用 -->
+    <dependency>
+      <groupId>commons-logging</groupId>
+      <artifactId>commons-logging</artifactId>
+      <version>1.1.3</version>
+    </dependency>
+    <!-- 一个强大的日志实现框架 -->
+    <dependency>
+      <groupId>log4j</groupId>
+      <artifactId>log4j</artifactId>
+      <version>1.2.17</version>
+    </dependency>
+
+    <!-- Google 开源的一组工具类库，提供了许多实用的工具类和数据结构 -->
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+      <version>11.0.2</version>
+    </dependency>
   </dependencies>
 </project>

@@ -63,6 +63,21 @@ public class RPC {
     }
 
     /**
+     * 获取对应协议的名字，优先获得注解中的协议名
+     *
+     * @param protocol
+     * @return
+     */
+    public static String getProtocolName(Class<?> protocol){
+        if (protocol == null){
+            return null;
+        }
+
+        ProtocolInfo anno = protocol.getAnnotation(ProtocolInfo.class);
+        return anno == null ? protocol.getName() : anno.protocolName();
+    }
+
+    /**
      * 获取指定协议的代理对象
      * @param protocol 协议接口
      * @param address 服务端地址
