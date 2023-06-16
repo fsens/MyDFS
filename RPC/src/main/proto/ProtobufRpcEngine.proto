@@ -1,0 +1,19 @@
+/**
+ * 定义了一些message用于Protocol Buffer RPC Engine
+ */
+
+syntax = "proto3";
+
+option java_package = "org.DFSdemo.protocol.proto";
+option java_outer_classname = "ProtobufRpcEngineProtos";
+option java_generate_equals_and_hash = true;
+package org.DFSdemo.protocol.proto;
+
+/**
+ * message RequestHeaderProto 定义了从客户端到服务端发请求时需要携带的header
+ * 如：方法名、协议
+ */
+message RequestHeaderProto{
+  optional string methodName = 1;
+  optional string declaringClassProtocolName = 2;
+}

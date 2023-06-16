@@ -1,16 +1,18 @@
 package org.DFSdemo.protocolTranslatorPB;
 
 import com.google.protobuf.ServiceException;
+import org.DFSdemo.ipc.RPC;
 import org.DFSdemo.protocol.*;
 import org.DFSdemo.protocolPB.ClientNamenodeProtocolPB;
 import org.DFSdemo.protocol.proto.ClientNamenodeProtocolProtos.rename2RequestProto;
 
+import java.io.Closeable;
 import java.io.IOException;
 
 /**
  * 由于要客户端那里需要代理的是ClientProtocol接口，而序列化后相应的接口是ClientNamenodeProtocolPB，所以需要一共适配器来来将两者进行适配
  */
-public class ClientNamenodeProtocolTranslatorPB implements ClientProtocol,Cloneable {
+public class ClientNamenodeProtocolTranslatorPB implements ClientProtocol, Closeable {
     private ClientNamenodeProtocolPB rpcProxy;
 
     public ClientNamenodeProtocolTranslatorPB(ClientNamenodeProtocolPB proxy) {
@@ -58,6 +60,11 @@ public class ClientNamenodeProtocolTranslatorPB implements ClientProtocol,Clonea
                 .build();
 
         try {
+            /**
+             * ClientNamenodeProtocolPB继承的ClientNamenodeProtocol.BlockingInterface将rename2方法的参数定义为了：
+             *第一个为控制器，一般为null
+             *第二个才是包装为了rename2RequestProto的请求
+             */
             return rpcProxy.rename2(null, request).getResult();
         }catch (ServiceException e){
             throw new IOException();
@@ -75,4 +82,9 @@ public class ClientNamenodeProtocolTranslatorPB implements ClientProtocol,Clonea
 //
 //        proxy.delete(request);
 //    }
+
+    @Override
+    public void close() throws IOException{
+        RPC.stopProxy(rpcProxy);
+    }
 }

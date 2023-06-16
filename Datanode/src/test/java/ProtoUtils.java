@@ -1,4 +1,4 @@
-package org.DFSdemo.utils;
+package org.DFSdemo.util;
 
 public class ProtoUtils {
 }
