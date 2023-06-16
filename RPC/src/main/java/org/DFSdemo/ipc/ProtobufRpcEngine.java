@@ -4,6 +4,7 @@ import com.google.protobuf.*;
 import org.DFSdemo.conf.Configuration;
 import org.DFSdemo.io.DataOutputOutputStream;
 import org.DFSdemo.io.Writable;
+import org.DFSdemo.protocol.proto.ProtobufRpcEngineProtos;
 import org.DFSdemo.protocol.proto.ProtobufRpcEngineProtos.*;
 import org.DFSdemo.util.ProtoUtil;
 import org.apache.commons.logging.Log;
@@ -65,14 +66,79 @@ public class ProtobufRpcEngine implements RpcEngine{
             this.protocolName = RPC.getProtocolName(protocol);
         }
 
-        /** 代理对象的方法定义处 */
+        /**
+         * RPC在客户端的invoker
+         *
+         * 该方法仅抛出ServiceException异常：
+         * 将所有的服务调用异常都归纳为一种异常类型ServiceException，可以方便异常处理和日志记录。
+         * 以下两种情况都构造ServiceException
+         * 1.该方法中客户端抛出异常
+         * 2.服务端的异常包装在RemoteException中的异常
+         *
+         * @param proxy 代理后的对象，一般不使用
+         * @param method 调用的方法
+         * @param args 调用方法的参数
+         * @return Message类型的返回值，包装了远程调用的返回信息（theResponseRead）
+         * @throws ServiceException 异常
+         */
         @Override
         public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
             long startTime = 0;
             if (LOG.isDebugEnabled()){
                 startTime = System.currentTimeMillis();
             }
-            return null;
+
+            /**
+             * 被代理的实际上是PB类，该类将原类的所有方法都转为了两参方法：
+             * 1.控制器：一般为null；
+             * 2.xxx.proto类封装的参数
+             */
+            if (args.length != NORMAL_ARGS_LEN){
+                throw new ServiceException("Too many parameters for request.Method: ["
+                        + method.getName() + "]" + ",Expected 2:Actual: "
+                        + args.length);
+            }
+            if (args[1] == null){
+                throw new ServiceException("null param while calling Method: ["
+                        + method.getName() + "]");
+            }
+
+            //远程调用
+            ProtobufRpcEngineProtos.RequestHeaderProto header = constructRpcRequestHeader(method);
+            Message theRequest = (Message) args[1];
+            final RpcResponseWrapper res;
+            try {
+                res = (RpcResponseWrapper) client.call(RPC.RpcKind.RPC_PROTOCOL_BUFFER,
+                        new RpcRequestWrapper(header, theRequest),
+                        remoteId);
+            }catch (Throwable e){
+                throw new ServiceException(e);
+            }
+
+            if (LOG.isDebugEnabled()){
+                long callTime = System.currentTimeMillis() - startTime;
+                LOG.debug("Call: " + method.getName() + "took" + callTime + "ms");
+            }
+
+            //处理远程调用的返回值
+            Message protoType = null;
+            try {
+                //获取返回类型的实例
+                protoType = getReturnType(method);
+            }catch (Exception e){
+                throw new ServiceException(e);
+            }
+            Message returnMessage = null;
+            try {
+                //将远程调用返回值中的二进制返回值（即theResponseRead）复制到新的消息对象中
+                returnMessage = protoType.newBuilderForType()
+                        .mergeFrom(res.theResponseRead)
+                        .build();
+            }catch (Throwable t){
+                throw new ServiceException(t);
+            }
+
+            return returnMessage;
         }
 
         /**
