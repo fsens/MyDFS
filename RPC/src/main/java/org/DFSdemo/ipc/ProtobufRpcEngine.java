@@ -43,7 +43,7 @@ public class ProtobufRpcEngine implements RpcEngine{
     private static class Invoker implements RpcInvocationHandler {
 
         private Client client;
-        private Client.ConnectionID remoteId;
+        private Client.ConnectionId remoteId;
         private final String protocolName;
         private final int NORMAL_ARGS_LEN = 2;
 
@@ -62,7 +62,7 @@ public class ProtobufRpcEngine implements RpcEngine{
                         SocketFactory factory,
                         int rpcTimeOut){
             this.client = new Client(RpcResponseWrapper.class, conf, factory);
-            this.remoteId = new Client.ConnectionID(address, protocol, rpcTimeOut, conf);
+            this.remoteId = new Client.ConnectionId(address, protocol, rpcTimeOut, conf);
             this.protocolName = RPC.getProtocolName(protocol);
         }
 

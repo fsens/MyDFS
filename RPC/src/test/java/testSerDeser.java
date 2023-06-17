@@ -3,7 +3,6 @@ import org.DFSdemo.protocol.proto.ClientNamenodeProtocolProtos;
 import org.DFSdemo.protocol.proto.ProtobufRpcEngineProtos;
 import org.junit.Assert;
 import org.junit.Test;
-import static org.junit.Assert.assertEquals;
 
 import java.io.*;
 import java.lang.reflect.Constructor;
