@@ -21,6 +21,10 @@ public class CommonConfigurationKeysPublic {
     /** IPC_CLIENT_CONNECT_MAX_RETRIES_ON_SOCKET_TIMEOUTS_KEY 的默认值，45次 */
     public static final int IPC_CLIENT_CONNECT_MAX_RETRIES_ON_SOCKET_TIMEOUTS_DEFAULT = 45;
 
+    /** 是否启用Nagle算法,true表示不启用 */
+    public static final String IPC_CLIENT_TCPNODELAY_KEY = "ipc.client.tcpnodelay";
+    /** IPC_CLIENT_TCPNODEALY_KEY的默认值，true*/
+    public static final boolean IPC_CLIENT_TCPNODEALY_DEFAULT = true;
 
     /** 是否允许 RPC 客户端向服务端发送 ping message */
     public static final String  IPC_CLIENT_PING_KEY = "ipc.client.ping";
