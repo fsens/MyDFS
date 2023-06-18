@@ -3,12 +3,15 @@ package org.DFSdemo.ipc;
 import org.DFSdemo.conf.CommonConfigurationKeysPublic;
 import org.DFSdemo.conf.Configuration;
 import org.DFSdemo.io.Writable;
+import org.DFSdemo.net.NetUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import javax.net.SocketFactory;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.Hashtable;
@@ -274,8 +277,11 @@ public class Client {
         private final boolean tcpNoDelay;
         /** 是否需要发送 ping message */
         private final boolean doPing;
-        /** 发送 ping message的时间间隔,时间：毫秒 */
-        private final int pingInterval;
+        /**
+         * 发送 ping message的时间间隔,时间：毫秒
+         * 这里没有定义为final是因为后面需要根据情况覆写pingInterval
+         */
+        private int pingInterval;
         /** socket连接超时的最大重试次数 */
         private final int maxRetriesOnSocketTimeouts;
         private int serviceClass;
@@ -347,6 +353,75 @@ public class Client {
         /** 建立网络连接 */
         private synchronized void setupIOStream(){
 
+        }
+
+        private Socket socket = null;
+
+        /**
+         * 建立socket连接
+         *
+         * 可能会有多个线程共享该连接，所以要保证同一时刻只能有一个线程建立与服务端的连接
+         * 该方法以this为锁
+         *
+         * @throws IOException
+         */
+        private synchronized void setupConnection() throws IOException{
+            short timeOutFailures = 0;
+            while (true){
+                try {
+                    this.socket = socketFactory.createSocket();
+                    this.socket.setTcpNoDelay(tcpNoDelay);
+                    this.socket.setKeepAlive(true);
+
+                    NetUtils.connect(socket, server, connectionTimeOut);
+
+                    if (rpcTimeOut > 0){
+                        //用rpcTimeOut覆盖pingInterval
+                        pingInterval = rpcTimeOut;
+                    }
+                    socket.setSoTimeout(pingInterval);
+                    return;
+                }catch (SocketTimeoutException ste){
+                    handleConnectionTimeout(timeOutFailures++, maxRetriesOnSocketTimeouts, ste);
+                }catch (IOException ioe){
+                    throw ioe;
+                }
+            }
+        }
+
+        /**
+         * 连接超时的处理方法
+         *
+         * @param curRetries 当前重连接次数
+         * @param maxRetries 最大重连接次数
+         * @param ioe 抛出的套接字连接超时异常
+         * @throws IOException
+         */
+        private void handleConnectionTimeout(int curRetries, int maxRetries, IOException ioe) throws IOException{
+            closeConnection();
+
+            if (curRetries >= maxRetries){
+                throw ioe;
+            }
+            LOG.info("Retrying connect to server: " + server + ".Already tried"
+            + curRetries + "time(s);maxRetries=" + maxRetries);
+        }
+
+        /**
+         * 关闭套接字连接
+         */
+        private void closeConnection(){
+            if (socket == null){
+                return;
+            }
+            try {
+                socket.close();
+            }catch (IOException e){
+                e.printStackTrace();
+                LOG.warn("Not able to close a socket",e);
+            }
+            //将socket置为null，为了下次能够重新建立连接
+            socket = null;
         }
     }
 
