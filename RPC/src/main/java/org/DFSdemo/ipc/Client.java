@@ -3,12 +3,19 @@ package org.DFSdemo.ipc;
 import org.DFSdemo.conf.CommonConfigurationKeysPublic;
 import org.DFSdemo.conf.Configuration;
 import org.DFSdemo.io.Writable;
+import org.DFSdemo.ipc.protobuf.IpcConnectionContextProtos;
+import org.DFSdemo.ipc.protobuf.RpcHeaderProtos;
+import org.DFSdemo.net.NetUtils;
+import org.DFSdemo.protocol.RPCConstants;
+import org.DFSdemo.util.ProtoUtil;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import javax.net.SocketFactory;
-import java.io.IOException;
+import java.io.*;
 import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.Hashtable;
@@ -16,6 +23,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class Client {
 
@@ -274,8 +282,11 @@ public class Client {
         private final boolean tcpNoDelay;
         /** 是否需要发送 ping message */
         private final boolean doPing;
-        /** 发送 ping message的时间间隔,时间：毫秒 */
-        private final int pingInterval;
+        /**
+         * 发送 ping message的时间间隔,时间：毫秒
+         * 这里没有定义为final是因为后面需要根据情况覆写pingInterval
+         */
+        private int pingInterval;
         /** socket连接超时的最大重试次数 */
         private final int maxRetriesOnSocketTimeouts;
         private int serviceClass;
@@ -283,8 +294,18 @@ public class Client {
         /** 标识是否应该关闭连接，默认值：false */
         private AtomicBoolean shouldCloseConnection = new AtomicBoolean();
 
+        /** IO活动的最新时间 */
+        private AtomicLong lastActivity = new AtomicLong();
+
         /** 该网络连接需要处理的所有RPC调用单元 */
         private Hashtable<Integer, Call> calls = new Hashtable<>();
+
+        /** 该连接的套接字 */
+        private Socket socket = null;
+
+        /** 输入流和输出流 */
+        private DataInputStream in;
+        private DataOutputStream out;
 
         public Connection(ConnectionId remoteId, Integer serviceClass) throws IOException{
             this.remoteId = remoteId;
@@ -344,9 +365,196 @@ public class Client {
             return true;
         }
 
-        /** 建立网络连接 */
+        /**
+         * 建立完整的IO流流程：
+         * 1.连接server
+         * 2.建立IO流
+         * 3.向server发送header/context信息
+         * 4.启动receiver线程
+         *
+         * 由于多个线程持有相同的Connection对象，需要保证只有一个线程可以执行上述业务逻辑
+         * 因此该方法需要用synchronized修饰
+         */
         private synchronized void setupIOStream(){
+            /**
+             * 如果socket不为空，则说明上一次关闭连接{@link Connection#closeConnection()}时出现了异常
+             * 所以该连接暂时不能使用
+             */
+            if (socket != null || shouldCloseConnection.get()){
+                return;
+            }
 
+            try {
+                if (LOG.isDebugEnabled()){
+                    LOG.debug("Connection to " + server);
+                }
+                /** 1.连接server */
+                setupConnection();
+                /** 2.建立IO流 */
+                InputStream inStream = NetUtils.getInputStream(socket);
+                OutputStream outStream = NetUtils.getOutputStream(socket);
+                /** 3.向server发送header信息 */
+                writeConnectionHeader(outStream);
+
+                if (doPing){
+                    /**
+                     * ping相关
+                     */
+                }
+
+                /**
+                 * DataInputStream(DataOutputStream)可以支持Java原子类的输入(输出)
+                 * BufferedInputStream(BufferedOutputStream)具有缓冲作用
+                 */
+                this.in = new DataInputStream(new BufferedInputStream(inStream));
+                this.out = new DataOutputStream(new BufferedOutputStream(outStream));
+
+                /** 3.向server发送context信息 */
+                writeConnectionContext(remoteId);
+
+                touch();
+
+                /** 4.启动receiver线程，用来接收响应信息 */
+                start();
+                return;
+            }catch (Throwable t){
+                if (t instanceof IOException){
+                    markClosed((IOException) t);
+                }else {
+                    markClosed(new IOException("Couldn't set up IO stream", t));
+                }
+            }
+            close();
+        }
+
+        /**
+         * 将当前时间更新为I/O最新活动时间
+         */
+        private void touch(){
+            lastActivity.set(System.currentTimeMillis());
+        }
+
+        private synchronized void markClosed(IOException e){
+
+        }
+
+        /**
+         * 建立socket连接
+         *
+         * 可能会有多个线程共享该连接，所以要保证同一时刻只能有一个线程建立与服务端的连接
+         * 该方法以this为锁
+         *
+         * @throws IOException
+         */
+        private synchronized void setupConnection() throws IOException{
+            short timeOutFailures = 0;
+            while (true){
+                try {
+                    this.socket = socketFactory.createSocket();
+                    this.socket.setTcpNoDelay(tcpNoDelay);
+                    this.socket.setKeepAlive(true);
+
+                    NetUtils.connect(socket, server, connectionTimeOut);
+
+                    if (rpcTimeOut > 0){
+                        //用rpcTimeOut覆盖pingInterval
+                        pingInterval = rpcTimeOut;
+                    }
+                    socket.setSoTimeout(pingInterval);
+                    return;
+                }catch (SocketTimeoutException ste){
+                    handleConnectionTimeout(timeOutFailures++, maxRetriesOnSocketTimeouts, ste);
+                }catch (IOException ioe){
+                    throw ioe;
+                }
+            }
+        }
+
+        /**
+         * 连接超时的处理方法
+         *
+         * @param curRetries 当前重连接次数
+         * @param maxRetries 最大重连接次数
+         * @param ioe 抛出的套接字连接超时异常
+         * @throws IOException
+         */
+        private void handleConnectionTimeout(int curRetries, int maxRetries, IOException ioe) throws IOException{
+            closeConnection();
+
+            if (curRetries >= maxRetries){
+                throw ioe;
+            }
+            LOG.info("Retrying connect to server: " + server + ".Already tried"
+            + curRetries + "time(s);maxRetries=" + maxRetries);
+        }
+
+        /**
+         * 关闭套接字连接
+         */
+        private void closeConnection(){
+            if (socket == null){
+                return;
+            }
+            try {
+                socket.close();
+            }catch (IOException e){
+                e.printStackTrace();
+                LOG.warn("Not able to close a socket",e);
+            }
+            //将socket置为null，为了下次能够重新建立连接
+            socket = null;
+        }
+
+        /**
+         * 建立连接后发送的请求头（header）
+         * +----------------------------+
+         * |"cnrpc" 5 字节               |
+         * +----------------------------+
+         * |Service Class 1 字节         |
+         * +----------------------------+
+         * |AuthProtocol 1 字节         |
+         *
+         * @param outStream 输出流
+         * @throws IOException
+         */
+        private void writeConnectionHeader(OutputStream outStream) throws IOException{
+            DataOutputStream out = new DataOutputStream(new BufferedOutputStream(outStream));
+
+            out.write(RPCConstants.HEADER.array());
+            out.write(serviceClass);
+            //暂无授权协议，写0
+            out.write(0);
+
+            out.flush();
+        }
+
+        /**
+         * 每次连接都要写连接上下文
+         *
+         * @param remoteId 服务端地址
+         * @throws IOException
+         */
+        private void writeConnectionContext(ConnectionId remoteId) throws IOException{
+            /** 构造连接上下文对象 */
+            IpcConnectionContextProtos.IpcConnectionContextProto connectionContext =
+                    ProtoUtil.makeIpcConnectionContext(RPC.getProtocolName(remoteId.getProtocol()));
+
+            RpcHeaderProtos.RpcRequestHeaderProto connectionContextHeader =
+                    ProtoUtil.makeRpcRequestHeader(
+                    RPC.RpcKind.RPC_PROTOCOL_BUFFER,
+                            RpcHeaderProtos.RpcRequestHeaderProto.OperationProto.RPC_FINAL_PACKET,
+                            RPCConstants.CONNECTION_CONTEXT_CALL_ID,
+                            clientId,
+                            RPCConstants.INVALID_RETRY_COUNT);
+            /** 包装连接上下文对象 */
+           ProtobufRpcEngine.RpcRequestMessageWrapper request = new ProtobufRpcEngine.RpcRequestMessageWrapper(
+                   connectionContextHeader, connectionContext
+           );
+            /** 向该连接的输出流中写入序列化后的连接上下文的总长度
+             * 以及序列化后的连接上下文
+             */
+            out.writeInt(request.getLength());
+            request.write(out);
         }
     }
 
