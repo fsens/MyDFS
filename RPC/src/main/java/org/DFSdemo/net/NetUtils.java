@@ -4,6 +4,8 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.ConnectException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -43,5 +45,27 @@ public class NetUtils {
             throw new ConnectException("Localhost targeted connection resulted in a loopback." +
                     "No daemon is listening on the target port.");
         }
+    }
+
+    /**
+     * 获取套接字默认的输入流
+     *
+     * @param socket
+     * @return 套接字默认的输入流
+     * @throws IOException
+     */
+    public static InputStream getInputStream(Socket socket) throws IOException{
+        return socket.getInputStream();
+    }
+
+    /**
+     * 获取套接字默认的输出流
+     *
+     * @param socket
+     * @return 套接字默认的输出流
+     * @throws IOException
+     */
+    public static OutputStream getOutputStream(Socket socket) throws IOException{
+        return socket.getOutputStream();
     }
 }

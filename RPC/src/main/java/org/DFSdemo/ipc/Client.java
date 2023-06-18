@@ -8,6 +8,8 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import javax.net.SocketFactory;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -291,6 +293,10 @@ public class Client {
 
         /** 该网络连接需要处理的所有RPC调用单元 */
         private Hashtable<Integer, Call> calls = new Hashtable<>();
+
+        /** 输入流和输出流 */
+        private DataInputStream in;
+        private DataOutputStream out;
 
         public Connection(ConnectionId remoteId, Integer serviceClass) throws IOException{
             this.remoteId = remoteId;
