@@ -13,8 +13,13 @@ public class RPCConstants {
     /** RPC连接发送header的头信息,cnrpc(client namenode rpc) */
     public static final ByteBuffer HEADER = ByteBuffer.wrap("cnrpc".getBytes());
 
+    /** 定义重试次数为-1，即不启用重试机制 */
 
     public static final int INVALID_RETRY_COUNT = -1;
 
     public static final byte[] DUMMY_CLIENT_ID = new byte[0];
+
+    /** 定义发送连接上下文的callId为-3 */
+    public final static int CONNECTION_CONTEXT_CALL_ID = -3;
+
 }

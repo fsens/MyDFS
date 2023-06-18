@@ -3,8 +3,11 @@ package org.DFSdemo.ipc;
 import org.DFSdemo.conf.CommonConfigurationKeysPublic;
 import org.DFSdemo.conf.Configuration;
 import org.DFSdemo.io.Writable;
+import org.DFSdemo.ipc.protobuf.IpcConnectionContextProtos;
+import org.DFSdemo.ipc.protobuf.RpcHeaderProtos;
 import org.DFSdemo.net.NetUtils;
 import org.DFSdemo.protocol.RPCConstants;
+import org.DFSdemo.util.ProtoUtil;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -450,6 +453,35 @@ public class Client {
             out.write(0);
 
             out.flush();
+        }
+
+        /**
+         * 每次连接都要写连接上下文
+         *
+         * @param remoteId 服务端地址
+         * @throws IOException
+         */
+        private void writeConnectionContext(ConnectionId remoteId) throws IOException{
+            /** 构造连接上下文对象 */
+            IpcConnectionContextProtos.IpcConnectionContextProto connectionContext =
+                    ProtoUtil.makeIpcConnectionContext(RPC.getProtocolName(remoteId.getProtocol()));
+
+            RpcHeaderProtos.RpcRequestHeaderProto connectionContextHeader =
+                    ProtoUtil.makeRpcRequestHeader(
+                    RPC.RpcKind.RPC_PROTOCOL_BUFFER,
+                            RpcHeaderProtos.RpcRequestHeaderProto.OperationProto.RPC_FINAL_PACKET,
+                            RPCConstants.CONNECTION_CONTEXT_CALL_ID,
+                            clientId,
+                            RPCConstants.INVALID_RETRY_COUNT);
+            /** 包装连接上下文对象 */
+           ProtobufRpcEngine.RpcRequestMessageWrapper request = new ProtobufRpcEngine.RpcRequestMessageWrapper(
+                   connectionContextHeader, connectionContext
+           );
+            /** 向该连接的输出流中写入序列化后的连接上下文的总长度
+             * 以及序列化后的连接上下文
+             */
+            out.writeInt(request.getLength());
+            request.write(out);
         }
     }
 

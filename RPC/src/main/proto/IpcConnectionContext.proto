@@ -1,0 +1,17 @@
+/**
+ * 作为连接的 theRequest
+ * 可以定义协议接口、安全、授权以及用户信息相关的信息
+ * 目前就定义了一个协议接口，其它的还不需要。它们留由扩展
+ */
+
+
+syntax = "proto3";
+
+option java_package = "org.DFSdemo.ipc.protobuf";
+option java_outer_classname = "IpcConnectionContextProtos";
+option java_generate_equals_and_hash = true;
+package org.DFSdemo.ipc.protobuf;
+
+message IpcConnectionContextProto{
+  optional string protocol = 1;
+}

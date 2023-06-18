@@ -4,6 +4,7 @@ import com.google.protobuf.*;
 import org.DFSdemo.conf.Configuration;
 import org.DFSdemo.io.DataOutputOutputStream;
 import org.DFSdemo.io.Writable;
+import org.DFSdemo.ipc.protobuf.RpcHeaderProtos;
 import org.DFSdemo.protocol.proto.ProtobufRpcEngineProtos;
 import org.DFSdemo.protocol.proto.ProtobufRpcEngineProtos.*;
 import org.DFSdemo.util.ProtoUtil;
@@ -361,6 +362,22 @@ public class ProtobufRpcEngine implements RpcEngine{
                 throw new IllegalArgumentException("getLength on uninitialized RpcWrapper");
             }
             return CodedOutputStream.computeUInt32SizeNoTag(resLen) + resLen;
+        }
+    }
+
+    /**
+     * 这是包装建立连接后发送的上下文的类
+     */
+    public static class RpcRequestMessageWrapper extends
+            BaseRpcMessageWithHeader<RpcHeaderProtos.RpcRequestHeaderProto>{
+
+        public RpcRequestMessageWrapper(RpcHeaderProtos.RpcRequestHeaderProto requestHeader, Message theRequest){
+            super(requestHeader, theRequest);
+        }
+
+        @Override
+        RpcHeaderProtos.RpcRequestHeaderProto parseHeaderFrom(byte[] bytes) throws IOException{
+            return RpcHeaderProtos.RpcRequestHeaderProto.parseFrom(bytes);
         }
     }
 }

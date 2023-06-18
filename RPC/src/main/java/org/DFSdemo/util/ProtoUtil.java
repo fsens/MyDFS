@@ -1,5 +1,10 @@
 package org.DFSdemo.util;
 
+import com.google.protobuf.ByteString;
+import org.DFSdemo.ipc.RPC;
+import org.DFSdemo.ipc.protobuf.IpcConnectionContextProtos;
+import org.DFSdemo.ipc.protobuf.RpcHeaderProtos;
+
 import java.io.DataInput;
 import java.io.IOException;
 
@@ -44,5 +49,63 @@ public class ProtoUtil {
             }
         }
         return result;
+    }
+
+
+    //构造建立连接后发送的上下文的包装类的对象。具体方法请求的包装类对象在适配器那里就构造好了
+
+    /**
+     * 构造IpcConnectionContextProto对象
+     *
+     * @param protocolName 协议字段
+     * @return 构造好的IpcConnectionContextProto对象
+     */
+    public static IpcConnectionContextProtos.IpcConnectionContextProto makeIpcConnectionContext(
+            final String protocolName){
+        IpcConnectionContextProtos.IpcConnectionContextProto.Builder retBuilder = IpcConnectionContextProtos.IpcConnectionContextProto.newBuilder();
+        retBuilder.setProtocol(protocolName);
+
+        return retBuilder.build();
+    }
+
+    static RpcHeaderProtos.RpcKindPtoto convertRpcKind(RPC.RpcKind rpcKind){
+        switch (rpcKind){
+            case RPC_BUILTIN : return RpcHeaderProtos.RpcKindPtoto.RPC_BUILDIN;
+            case RPC_PROTOCOL_BUFFER: return RpcHeaderProtos.RpcKindPtoto.RPC_PROTOCOL_BUFFER;
+            default: return null;
+        }
+    }
+
+    public static RPC.RpcKind convertRpcKind(RpcHeaderProtos.RpcKindPtoto rpcKind){
+        switch (rpcKind){
+            case RPC_BUILDIN: return RPC.RpcKind.RPC_BUILTIN;
+            case RPC_PROTOCOL_BUFFER: return RPC.RpcKind.RPC_PROTOCOL_BUFFER;
+            default: return null;
+        }
+    }
+
+    /**
+     * 构造RpcRequestHeaderProto类型的对象
+     *
+     * @param rpcKind 序列化方式
+     * @param operation 操作
+     * @param callId 调用单元的id
+     * @param clientId 客户端的id
+     * @param retryCount 重连次数
+     * @return 构造好的RpcRequestHeaderProto类型的对象
+     */
+    public static RpcHeaderProtos.RpcRequestHeaderProto makeRpcRequestHeader(RPC.RpcKind rpcKind,
+                                                                             RpcHeaderProtos.RpcRequestHeaderProto.OperationProto operation,
+                                                                             int callId,
+                                                                             byte[] clientId,
+                                                                             int retryCount){
+        RpcHeaderProtos.RpcRequestHeaderProto.Builder retBuilder = RpcHeaderProtos.RpcRequestHeaderProto.newBuilder();
+
+        retBuilder.setRpcKind(convertRpcKind(rpcKind))
+                .setRpcOp(operation)
+                .setCallId(callId)
+                .setClientId(ByteString.copyFrom(clientId))
+                .setRetryCount(retryCount);
+        return retBuilder.build();
     }
 }

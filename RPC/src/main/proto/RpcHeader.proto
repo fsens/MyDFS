@@ -1,0 +1,31 @@
+/**
+ * 定义了建立连接后发送的上下文，作为连接的requestHeader
+ */
+
+syntax = "proto3";
+
+option java_package = "org.DFSdemo.ipc.protobuf";
+option java_outer_classname = "RpcHeaderProtos";
+option java_generate_equals_and_hash = true;
+package org.DFSdemo.ipc.protobuf;
+
+enum RpcKindPtoto{
+  RPC_BUILDIN = 0;//内部使用，为了占位
+  RPC_PROTOCOL_BUFFER = 1;//使用ProtobufRpcEngine
+}
+
+message RpcRequestHeaderProto{
+  //RPC请求头
+  enum OperationProto{
+    RPC_FINAL_PACKET = 0;//最终的rpc包
+    RPC_CONTINUATION_PACKET = 1;//尚未完成的rpc包
+    RPC_CLOSE_CONNECTION = 2;//关闭rpc连接
+  }
+
+  optional RpcKindPtoto rpcKind = 1;
+  optional OperationProto rpcOp = 2;
+  optional sint32 callId = 3;//在返回中会含有该值
+  optional bytes clientId = 4;//全局唯一的client ID
+  //clientId + callId 可以唯一确定请求重试的次数；1 意味着第一次重试
+  optional sint32 retryCount = 5;
+}
