@@ -3,6 +3,7 @@ package org.DFSdemo.ipc;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.DFSdemo.conf.CommonConfigurationKeysPublic;
 import org.DFSdemo.conf.Configuration;
+import org.DFSdemo.io.IOUtils;
 import org.DFSdemo.io.Writable;
 import org.DFSdemo.ipc.protobuf.IpcConnectionContextProtos;
 import org.DFSdemo.ipc.protobuf.RpcHeaderProtos;
@@ -22,9 +23,7 @@ import java.nio.ByteBuffer;
 import java.util.Hashtable;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -51,7 +50,7 @@ public class Client {
     private final int connectionTimeOut;
     private final byte[] clientId;//标识客户端
 
-    /** 发送调用请求(Call对象)的线程池 */
+    /** 发送调用请求(Call对象)的线程池，这个可以将发送调用请求与其它代码隔离 */
     private final ExecutorService sendParamsExecutor;
 
     /**
@@ -620,6 +619,96 @@ public class Client {
             out.writeInt(request.getLength());
             request.write(out);
         }
+
+        /** 创建发送调用请求的锁。该锁是为了保证多个进程/线程持有相同的Client对象时对该锁锁上的代码块的访问是串行的 */
+        private final Object sendRpcRequestLock = new Object();
+
+        /**
+         * 向服务端发送rpc请求
+         *
+         * @param call 包含rpc调用的相关信息
+         * @throws IOException
+         * @throws InterruptedException
+         */
+        public void sendRpcRequest(final Call call) throws IOException, InterruptedException{
+            if (shouldCloseConnection.get()){
+                return;
+            }
+
+            /**
+             * 序列化需要发送出去的消息，这里由实际调用方法的线程来完成
+             * 实际发送前各个线程可以并行地准备（序列化）待发送地信息，而不是发送线程(sendParamExecutor)
+             * 这样做的好处：1.可以减小锁地细粒度；2.序列化过程中抛出的异常每个线程可以单独、独立地报告
+             *
+             * 发送地格式：
+             * 0)下面1、2两项地长度之和，4字节
+             * 1)RpcRequestHeader
+             * 2)RpcRequest
+             */
+            final ByteArrayOutputStream bo = new ByteArrayOutputStream();
+            final DataOutputStream tmpOut = new DataOutputStream(bo);
+            /** 暂时没有重试机制，所以retryCount=-1 */
+            RpcHeaderProtos.RpcRequestHeaderProto header = ProtoUtil.makeRpcRequestHeader(
+                    call.rpcKind, RpcHeaderProtos.RpcRequestHeaderProto.OperationProto.RPC_FINAL_PACKET,
+                    call.id,clientId,-1);
+            /** 写入header到临时的输出流中 */
+            header.writeDelimitedTo(tmpOut);
+            /** 写入请求调用的信息到临时的输出流中 */
+            call.rpcRequest.write(tmpOut);
+
+            /** 保证持有相同Client对象的进程/线程对该代码块的访问是串行的 */
+            synchronized (sendRpcRequestLock){
+                Future<?> senderFuture = sendParamsExecutor.submit(new Runnable() {
+                    @Override
+                    public void run() {
+                        /** 多线程并发调用服务端，需要锁住输出流out，防止冲突 */
+                        try {
+                            //由于这是内部类(匿名内部类),访问外部类的非静态属性的方法是:外部类.this.属性名
+                            synchronized (Connection.this.out){
+                                if (shouldCloseConnection.get()){
+                                    return;
+                                }
+                                if (LOG.isDebugEnabled()){
+                                    LOG.debug(getName() + "sending #" + call.id);
+                                }
+
+                                byte[] data = bo.toByteArray();
+                                int dataLen = bo.size();
+                                out.writeInt(dataLen);
+                                out.write(data, 0, dataLen);
+                                out.flush();
+                            }
+                        }catch (IOException e){
+                            /**
+                             * 如果在这里发生异常，将处于不可恢复状态
+                             * 因此，关闭连接，终止所有未完成的调用
+                             */
+                            markClosed(e);
+                        }finally {
+                            IOUtils.closeStream(tmpOut);
+                        }
+                    }
+                });
+
+                try {
+                    senderFuture.get();
+                }catch (ExecutionException e){
+                    //Java有异常链，该异常可能是由另一个异常引起的
+                    //调用getCause方法获取真正的异常
+                    Throwable cause = e.getCause();
+
+                    /**
+                     * 这里只能是运行时异常，因为IOException异常已经在上面的匿名内部类捕获了
+                     */
+                    if (cause instanceof RuntimeException){
+                        throw (RuntimeException) cause;
+                    }else {
+                        throw new RuntimeException("unexpected checked exception", cause);
+                    }
+                }
+            }
+        }
+
     }
 
     /**
