@@ -1,5 +1,6 @@
 package org.DFSdemo.ipc;
 
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.DFSdemo.conf.CommonConfigurationKeysPublic;
 import org.DFSdemo.conf.Configuration;
 import org.DFSdemo.io.Writable;
@@ -21,6 +22,9 @@ import java.nio.ByteBuffer;
 import java.util.Hashtable;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -47,6 +51,9 @@ public class Client {
     private final int connectionTimeOut;
     private final byte[] clientId;//标识客户端
 
+    /** 发送调用请求(Call对象)的线程池 */
+    private final ExecutorService sendParamsExecutor;
+
     /**
      * @param valueClass 调用的返回类型
      * @param conf 配置对象
@@ -59,6 +66,8 @@ public class Client {
         this.connectionTimeOut = conf.getInt(CommonConfigurationKeysPublic.IPC_CLIENT_CONNECT_TIMEOUT_KEY,
                 CommonConfigurationKeysPublic.IPC_CLIENT_CONNECT_MAX_RETRIES_ON_SOCKET_TIMEOUTS_DEFAULT);
         this.clientId = ClientId.getClientId();
+        /** 这里语法上可以直接写this.sendParamsExecutor = clientExecutorFactory.clientExecutor,但是不要这样做，因为这样不能让clientExecutor引用数增加 */
+        this.sendParamsExecutor = clientExecutorFactory.refAndGetInstance();
     }
 
     public class ClientId{
@@ -267,6 +276,61 @@ public class Client {
      */
     public Writable call(RPC.RpcKind rpcKind, Writable rpcRequest, ConnectionId remoteId, int serviceClass) throws IOException{
         return null;
+    }
+
+    /**
+     * 利用单例的设计方法，保证只有一个线程池
+     */
+    private final static ClientExecutorServiceFactory clientExecutorFactory = new ClientExecutorServiceFactory();
+
+    /**
+     * 线程池工厂
+     */
+    private static class ClientExecutorServiceFactory{
+        /** clientExecutor被引用的次数 */
+        private int executorRefCount = 0;
+        /** 线程池 */
+        private ExecutorService clientExecutor = null;
+
+        /**
+         * 得到一个线程池
+         * 由于该方法是会被多个线程同时使用的。为了保证线程安全，这里应该加锁
+         * @return 线程池对象
+         */
+        synchronized ExecutorService refAndGetInstance(){
+            if (executorRefCount == 0){
+                clientExecutor = Executors.newCachedThreadPool(
+                        new ThreadFactoryBuilder().setDaemon(true)
+                                .setNameFormat("IPC Parameter Sending Thread #%d")
+                                .build());
+            }
+            executorRefCount++;
+            return clientExecutor;
+        }
+
+        /**
+         * 销毁线程池
+         * 由于该方法是会被多个线程同时使用的。为了保证线程安全，这里应该加锁
+         */
+        synchronized void unrefAndCleanup(){
+            executorRefCount--;
+            assert executorRefCount >= 0;
+
+            if (executorRefCount == 0){
+                /** shutdown()方法会等待线程池中的任务完成再关闭线程池 */
+                clientExecutor.shutdown();
+                try {
+                    if (!clientExecutor.awaitTermination(1, TimeUnit.MINUTES)){
+                        /** shutdownNow()会停止线程池的所有任务并立即关闭线程池 */
+                        clientExecutor.shutdownNow();
+                    }
+                }catch (InterruptedException e){
+                    LOG.error("Interrupted while waiting for clientExecutor" + "to stop", e);
+                    clientExecutor.shutdownNow();
+                }
+                clientExecutor = null;
+            }
+        }
     }
 
     private class Connection extends Thread{
