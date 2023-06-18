@@ -4,13 +4,12 @@ import org.DFSdemo.conf.CommonConfigurationKeysPublic;
 import org.DFSdemo.conf.Configuration;
 import org.DFSdemo.io.Writable;
 import org.DFSdemo.net.NetUtils;
+import org.DFSdemo.protocol.RPCConstants;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import javax.net.SocketFactory;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
@@ -428,6 +427,29 @@ public class Client {
             }
             //将socket置为null，为了下次能够重新建立连接
             socket = null;
+        }
+
+        /**
+         * 建立连接后发送的请求头（header）
+         * +----------------------------+
+         * |"cnrpc" 5 字节               |
+         * +----------------------------+
+         * |Service Class 1 字节         |
+         * +----------------------------+
+         * |AuthProtocol 1 字节         |
+         *
+         * @param outStream 输出流
+         * @throws IOException
+         */
+        private void writeConnectionHeader(OutputStream outStream) throws IOException{
+            DataOutputStream out = new DataOutputStream(new BufferedOutputStream(outStream));
+
+            out.write(RPCConstants.HEADER.array());
+            out.write(serviceClass);
+            //暂无授权协议，写0
+            out.write(0);
+
+            out.flush();
         }
     }
 
