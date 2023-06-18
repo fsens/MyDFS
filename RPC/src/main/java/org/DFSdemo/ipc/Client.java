@@ -23,6 +23,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class Client {
 
@@ -293,8 +294,14 @@ public class Client {
         /** 标识是否应该关闭连接，默认值：false */
         private AtomicBoolean shouldCloseConnection = new AtomicBoolean();
 
+        /** IO活动的最新时间 */
+        private AtomicLong lastActivity = new AtomicLong();
+
         /** 该网络连接需要处理的所有RPC调用单元 */
         private Hashtable<Integer, Call> calls = new Hashtable<>();
+
+        /** 该连接的套接字 */
+        private Socket socket = null;
 
         /** 输入流和输出流 */
         private DataInputStream in;
@@ -358,12 +365,78 @@ public class Client {
             return true;
         }
 
-        /** 建立网络连接 */
+        /**
+         * 建立完整的IO流流程：
+         * 1.连接server
+         * 2.建立IO流
+         * 3.向server发送header/context信息
+         * 4.启动receiver线程
+         *
+         * 由于多个线程持有相同的Connection对象，需要保证只有一个线程可以执行上述业务逻辑
+         * 因此该方法需要用synchronized修饰
+         */
         private synchronized void setupIOStream(){
+            /**
+             * 如果socket不为空，则说明上一次关闭连接{@link Connection#closeConnection()}时出现了异常
+             * 所以该连接暂时不能使用
+             */
+            if (socket != null || shouldCloseConnection.get()){
+                return;
+            }
 
+            try {
+                if (LOG.isDebugEnabled()){
+                    LOG.debug("Connection to " + server);
+                }
+                /** 1.连接server */
+                setupConnection();
+                /** 2.建立IO流 */
+                InputStream inStream = NetUtils.getInputStream(socket);
+                OutputStream outStream = NetUtils.getOutputStream(socket);
+                /** 3.向server发送header信息 */
+                writeConnectionHeader(outStream);
+
+                if (doPing){
+                    /**
+                     * ping相关
+                     */
+                }
+
+                /**
+                 * DataInputStream(DataOutputStream)可以支持Java原子类的输入(输出)
+                 * BufferedInputStream(BufferedOutputStream)具有缓冲作用
+                 */
+                this.in = new DataInputStream(new BufferedInputStream(inStream));
+                this.out = new DataOutputStream(new BufferedOutputStream(outStream));
+
+                /** 3.向server发送context信息 */
+                writeConnectionContext(remoteId);
+
+                touch();
+
+                /** 4.启动receiver线程，用来接收响应信息 */
+                start();
+                return;
+            }catch (Throwable t){
+                if (t instanceof IOException){
+                    markClosed((IOException) t);
+                }else {
+                    markClosed(new IOException("Couldn't set up IO stream", t));
+                }
+            }
+            close();
         }
 
-        private Socket socket = null;
+        /**
+         * 将当前时间更新为I/O最新活动时间
+         */
+        private void touch(){
+            lastActivity.set(System.currentTimeMillis());
+        }
+
+        private synchronized void markClosed(IOException e){
+
+        }
 
         /**
          * 建立socket连接
