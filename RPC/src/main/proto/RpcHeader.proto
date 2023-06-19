@@ -1,5 +1,6 @@
 /**
- * 定义了建立连接后发送的上下文，作为连接的requestHeader
+ * 1.定义了建立连接后发送的上下文，作为连接的requestHeader；
+ * 2.定义了服务端响应的头
  */
 
 syntax = "proto3";
@@ -14,6 +15,9 @@ enum RpcKindPtoto{
   RPC_PROTOCOL_BUFFER = 1;//使用ProtobufRpcEngine
 }
 
+/**
+ * Rpc Request Header--RPC的请求头
+ */
 message RpcRequestHeaderProto{
   //RPC请求头
   enum OperationProto{
@@ -28,4 +32,42 @@ message RpcRequestHeaderProto{
   optional bytes clientId = 4;//全局唯一的client ID
   //clientId + callId 可以唯一确定请求重试的次数；1 意味着第一次重试
   optional sint32 retryCount = 5;
+}
+
+/**
+ *  Rpc Response Header--RPC的响应头
+ */
+message RpcResponseHeaderProto{
+  /**
+   * RpcStatus - 标识成功或者失败
+   */
+  enum RpcStatusProto{
+    SUCCESS = 0;//RPC调用成功
+    ERROR = 1;//RPC调用出错 - 可以不关闭连接
+    FATAL = 2;//致命错误，需要关闭连接
+  }
+
+  enum RpcErrorCodeProto{
+    //非致命Rpc错误码
+    ERROR_APPLICATION = 0;//Rpc 失败 - rpc应用层抛出异常
+    ERROR_NO_SUCH_METHOD = 1;//Rpc 调用错误 - 没有这样的方法
+    ERROR_NO_SUCH_PROTOCOL = 2;//Rpc 调用错误 - 没有这样的协议
+    ERROR_RPC_SERVER = 3;//Rpc 服务端调用错误
+    ERROR_SERIALIZING = 4;//序列化响应时出错
+
+    //致命错误
+    FATAL_UNKNOWN = 10;//未知的致命错误
+    FATAL_UNSUPPORTED_SERIALIZATION = 11;//不支持的序列化类型
+    FATAL_INVALID_RPC_HEADER = 12;//RpcHeader的字段无效
+    FATAL_DESERIALIZING_REQUEST = 13;//不能反序列化调用请求
+    FATAL_UNAUTHORIZED = 14;//授权失败，现在还未实现该功能，留由拓展
+  }
+
+  optional uint32 callId = 1;
+  optional RpcStatusProto status = 2;
+  optional string exceptionClassName = 3;//发生错误时的异常类名
+  optional string errorMsg = 4;//错误的栈踪
+  optional RpcErrorCodeProto errorDetail = 5;//错误码
+  optional bytes clientId = 6;
+  optional sint32 retryCount = 7;//重试次数。现在还未实现重试机制，这个可以先不管，留由拓展
 }

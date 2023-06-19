@@ -415,7 +415,7 @@ public class Client {
 
         /**
          * 向该Connection对象的Call队列中加入一个call
-         * 同时唤醒等待的线程
+         * 同时唤醒所有在this上等待的线程
          *
          * @param call 加入待处理call队列的元素
          * @return 如果连接处于关闭状态，返回false；如果call正确加入了队列，则返回true
@@ -425,6 +425,8 @@ public class Client {
                 return false;
             }
             calls.put(call.id, call);
+            //唤醒所有在this上等待的线程
+            notifyAll();
             return true;
         }
 
@@ -466,6 +468,7 @@ public class Client {
                 }
 
                 /**
+                 * 包装Connection类的输入输出流
                  * DataInputStream(DataOutputStream)可以支持Java原子类的输入(输出)
                  * BufferedInputStream(BufferedOutputStream)具有缓冲作用
                  */
@@ -641,7 +644,7 @@ public class Client {
              * 这样做的好处：1.可以减小锁地细粒度；2.序列化过程中抛出的异常每个线程可以单独、独立地报告
              *
              * 发送地格式：
-             * 0)下面1、2两项地长度之和，4字节
+             * 0)下面1、2两项地长度之和，4个字节
              * 1)RpcRequestHeader
              * 2)RpcRequest
              */
@@ -706,6 +709,38 @@ public class Client {
                         throw new RuntimeException("unexpected checked exception", cause);
                     }
                 }
+            }
+        }
+
+        /**
+         * 判断是否有服务端响应可接收
+         * @return
+         */
+        private synchronized boolean waitForWork(){
+            if (calls.isEmpty() && !shouldCloseConnection.get() && running.get()){
+                //计算等待时间
+                long timeout = maxIdleTime - (System.currentTimeMillis() - lastActivity.get());
+                if (timeout > 0){
+                    try {
+                        //如果calls为空，则先等待一会时间
+                        wait(timeout);
+                    }catch (InterruptedException e){
+                        //被中断属于正常现象，无需报警
+                    }
+                }
+            }
+            if (!calls.isEmpty() && !shouldCloseConnection.get() && running.get()){
+                return true;
+            }else if (shouldCloseConnection.get()){
+                return false;
+            }else if (calls.isEmpty()){
+                //没有call了，需要终止连接
+                markClosed(null);
+                return false;
+            }else {
+                //running状态已经为false，但仍然有call
+                markClosed(new IOException("", new InterruptedException()));
+                return false;
             }
         }
 
