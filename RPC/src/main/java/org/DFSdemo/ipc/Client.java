@@ -440,8 +440,29 @@ public class Client {
             return server;
         }
 
+        /**
+         * 判断服务端是否有响应，如果有则接收响应并解析，没有就关闭连接
+         */
         @Override
         public void run(){
+            if (LOG.isDebugEnabled()){
+                LOG.debug(getName() + ": starting, having connections " + connections.size());
+            }
+
+            try {
+                while (waitForWork()){
+                    receiveRpcResponse();
+                }
+            }catch (Throwable t){
+                LOG.warn("Unexpected error reading responses on connection " + this, t);
+                markClosed(new IOException("Error reading responses", t));
+            }
+
+            close();
+
+            if (LOG.isDebugEnabled()){
+                LOG.debug(getName() + ": stopped, remaining connections " + connections.size());
+            }
 
         }
 
