@@ -1,6 +1,7 @@
 package org.DFSdemo.ipc;
 
 import org.DFSdemo.conf.Configuration;
+import org.DFSdemo.util.ReflectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -88,12 +89,10 @@ public class RPC {
         RpcEngine engine = PROTOCOL_ENGINES.get(protocol);
         if (engine == null){
             //默认使用ProtobufRpcEngine
-            Class<?> clazz = conf.getClass(RPC_ENGINE+"."+protocol.getName(),ProtobufRpcEngine.class);
-
+            Class<?> clazz = conf.getClass(RPC_ENGINE + "." + protocol.getName(), ProtobufRpcEngine.class);
         try {
             //通过反射实例化RpcEngine的实现类
-            Constructor constructor = clazz.getDeclaredConstructor();
-            engine = (RpcEngine) constructor.newInstance();
+            engine = (RpcEngine) ReflectionUtils.newInstance(clazz);
             PROTOCOL_ENGINES.put(protocol, engine);
         }catch (Exception e){
             throw new RuntimeException(e);

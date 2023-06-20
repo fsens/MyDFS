@@ -17,6 +17,7 @@ public class RPCConstants {
 
     public static final int INVALID_RETRY_COUNT = -1;
 
+    /** 在特殊情况下使用的ClientId，如没有真实客户端的情况下 */
     public static final byte[] DUMMY_CLIENT_ID = new byte[0];
 
     /** 定义发送连接上下文的callId为-3 */
