@@ -1,6 +1,7 @@
 package org.DFSdemo.ipc;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import com.google.protobuf.CodedOutputStream;
 import org.DFSdemo.conf.CommonConfigurationKeysPublic;
 import org.DFSdemo.conf.Configuration;
 import org.DFSdemo.io.IOUtils;
@@ -10,6 +11,8 @@ import org.DFSdemo.ipc.protobuf.RpcHeaderProtos;
 import org.DFSdemo.net.NetUtils;
 import org.DFSdemo.protocol.RPCConstants;
 import org.DFSdemo.util.ProtoUtil;
+import org.DFSdemo.util.ReflectionUtils;
+import org.DFSdemo.util.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -20,6 +23,7 @@ import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Hashtable;
 import java.util.Objects;
 import java.util.UUID;
@@ -38,7 +42,7 @@ public class Client {
     /** 连接的缓冲池 */
     private final Hashtable<ConnectionId, Connection> connections = new Hashtable<>();
 
-
+    /** 调用的返回类型,如RpcResponseWrapper */
     private Class<? extends Writable> valueClass;
     /** 标识Client是否还在运行 */
     private AtomicBoolean running = new AtomicBoolean(true);
@@ -54,7 +58,7 @@ public class Client {
     private final ExecutorService sendParamsExecutor;
 
     /**
-     * @param valueClass 调用的返回类型
+     * @param valueClass 调用的返回类型,如RpcResponseWrapper
      * @param conf 配置对象
      * @param factory socket工厂
      */
@@ -90,8 +94,11 @@ public class Client {
         final int id;
         Writable rpcRequest;
         Writable rpcResponse;
+        /** 异常信息 */
         IOException error;
         final RPC.RpcKind rpcKind;
+        /** 只有发出请求并得到返回值才算完成调用，默认未完成调用 */
+        boolean done = false;
 
         private Call(RPC.RpcKind rpcKind, Writable rpcRequest){
             this.rpcKind = rpcKind;
@@ -100,6 +107,38 @@ public class Client {
             this.id = nextCallId();
         }
 
+        /**
+         * 调用完成，唤醒调用者
+         * 由于调用notify()唤醒等待的线程需要先获得该锁对象，所以得加synchronized
+         */
+        public synchronized void callComplete(){
+            this.done = true;
+            //使用notify()性能更好（这里我们更关注性能而不是公平性）
+            notify();
+        }
+
+        /**
+         * 设置返回值
+         * 由于callComplete()方法包含了notify()方法，所以得加synchronized关键字
+         *
+         * @param rpcRequest 调用的返回值
+         */
+        public synchronized void setRpcResponse(Writable rpcRequest){
+            this.rpcResponse = rpcResponse;
+            callComplete();
+        }
+
+        /**
+         * 设置异常信息，将异常抛给上层调用者
+         * 由于callComplete()方法包含了notify()方法，所以得加synchronized关键字
+         *
+         *
+         * @param error 异常对象
+         */
+        public synchronized void setException(IOException error){
+            this.error = error;
+            callComplete();
+        }
 
     }
 
@@ -425,8 +464,8 @@ public class Client {
                 return false;
             }
             calls.put(call.id, call);
-            //唤醒所有在this上等待的线程
-            notifyAll();
+            //随机唤醒一个在this上等待的线程，使用notify性能更好（这里我们更关注性能而不是公平性）
+            notify();
             return true;
         }
 
@@ -643,8 +682,8 @@ public class Client {
              * 实际发送前各个线程可以并行地准备（序列化）待发送地信息，而不是发送线程(sendParamExecutor)
              * 这样做的好处：1.可以减小锁地细粒度；2.序列化过程中抛出的异常每个线程可以单独、独立地报告
              *
-             * 发送地格式：
-             * 0)下面1、2两项地长度之和，4个字节
+             * 发送的格式：
+             * 0)下面1、2两项的长度之和，4个字节
              * 1)RpcRequestHeader
              * 2)RpcRequest
              */
@@ -744,6 +783,96 @@ public class Client {
             }
         }
 
+        /**
+         * 接收、解析服务端响应
+         */
+        private void receiveRpcResponse(){
+            if (shouldCloseConnection.get()){
+                return;
+            }
+            touch();
+
+            try {
+                //读取响应信息的总长度
+                int totalLen = in.read();
+                //从响应信息里面反序列化header
+                RpcHeaderProtos.RpcResponseHeaderProto header =
+                        RpcHeaderProtos.RpcResponseHeaderProto.parseDelimitedFrom(in);
+                //check header的正确性
+                checkResponse(header);
+
+                //计算header占用的总长度，包括数据本身的长度以及长度的varint32编码后的长度
+                int headerLen = header.getSerializedSize();
+                headerLen += CodedOutputStream.computeUInt32SizeNoTag(headerLen);
+
+                int callId = header.getCallId();
+                if (LOG.isDebugEnabled()){
+                    LOG.debug(getName() + "got value #" + callId);
+                }
+
+                Call call = calls.get(callId);
+                RpcHeaderProtos.RpcResponseHeaderProto.RpcStatusProto status = header.getStatus();
+                //判断RPC调用是否成功
+                if (status == RpcHeaderProtos.RpcResponseHeaderProto.RpcStatusProto.SUCCESS){
+                    Writable value = ReflectionUtils.newInstance(valueClass);
+                    //响应头header已经被从输入流in中读出，现在可以读调用方法的返回值了
+                    value.readFields(in);
+                    calls.remove(callId);
+                    call.setRpcResponse(value);
+                }else {
+                    /**
+                     * 对于RPC调用错误信息，需要获取具体的错误类、错误码、错误信息和栈踪
+                     */
+                    if (totalLen != headerLen){
+                        throw new RpcClientException(
+                                "RPC response length mismatch on rpc error");
+                    }
+
+                    String exceptionClassName = header.hasExceptionClassName() ? header.getExceptionClassName() : "ServerDidNotSetExceptionClassName";
+                    String errMsg = header.hasErrorMsg() ? header.getErrorMsg() : "ServerDidNotSetErrorMsg";
+                    final RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto errCode =
+                            header.hasErrorDetail() ? header.getErrorDetail() : null;
+                    if (errCode == null){
+                        LOG.warn("Detailed error code not set by server on rpc error");
+                    }
+                    RemoteException re = new RemoteException(exceptionClassName, errMsg, errCode);
+                    if (status == RpcHeaderProtos.RpcResponseHeaderProto.RpcStatusProto.ERROR){
+                        //对于非致命错误，报告异常值，不必关闭连接
+                        calls.remove(callId);
+                        call.setException(re);
+                    }else {
+                        //致命错误，需要关闭当前连接
+                        markClosed(re);
+                    }
+                }
+            }catch (IOException e){
+                markClosed(e);
+            }
+        }
+
+    }
+
+    /**
+     * 判断服务端返回的ClientId对象与当前Client对象的clientId是否相等
+     *
+     * @param header 反序列化后的响应头
+     * @throws IOException
+     */
+    void checkResponse(RpcHeaderProtos.RpcResponseHeaderProto header) throws IOException{
+        if (header == null){
+            throw new IOException("Response is null");
+        }
+
+        if (header.hasCallId()){
+            final byte[] responseId = header.getClientId().toByteArray();
+            if (!Arrays.equals(responseId, RPCConstants.DUMMY_CLIENT_ID)){
+                if (!Arrays.equals(responseId, clientId)){
+                    throw new IOException("Client ID is not matched: local ID="
+                    + StringUtils.byteToHexString(clientId) + ", ID in response="
+                    + StringUtils.byteToHexString(header.getClientId().toByteArray()));
+                }
+            }
+        }
     }
 
     /**
