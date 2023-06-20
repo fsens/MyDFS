@@ -18,10 +18,8 @@ import org.apache.commons.logging.LogFactory;
 
 import javax.net.SocketFactory;
 import java.io.*;
-import java.net.InetSocketAddress;
-import java.net.Socket;
-import java.net.SocketTimeoutException;
-import java.net.UnknownHostException;
+import java.lang.reflect.Constructor;
+import java.net.*;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Hashtable;
@@ -138,6 +136,15 @@ public class Client {
         public synchronized void setException(IOException error){
             this.error = error;
             callComplete();
+        }
+
+        /**
+         * 返回rpc调用的返回值
+         *
+         * @return rpc调用的返回值
+         */
+        public synchronized Writable getRpcResponse(){
+            return rpcResponse;
         }
 
     }
@@ -313,7 +320,68 @@ public class Client {
      * @throws IOException 抛网络异常或者远程代码执行异常
      */
     public Writable call(RPC.RpcKind rpcKind, Writable rpcRequest, ConnectionId remoteId, int serviceClass) throws IOException{
-        return null;
+        final Call call = createCall(rpcKind, rpcRequest);
+        Connection connection = getConnection(remoteId, call, serviceClass);
+        try {
+            //发送rpc请求
+            connection.sendRpcRequest(call);
+        }catch (InterruptedException e){
+            //发送调用请求被中断后，需要设置当前调用线程的中断标记位
+            Thread.currentThread().interrupt();
+            LOG.warn("interrupted waiting to send rpc request to server", e);
+            throw new IOException(e);
+        }
+
+        boolean interrupted = false;
+        //为了能在call上调用wait方法，需要在call对象上加锁
+        synchronized (call){
+            while (!call.done){
+                try {
+                    //等待，直到RPC结束被唤醒
+                    call.wait();
+                }catch (InterruptedException e){
+                    //保存被中断过的标记
+                    interrupted = true;
+                }
+            }
+        }
+
+        if (interrupted){
+            //等待服务端返回结果时被中断，需要设置当前调用的线程的中断标记位
+            Thread.currentThread().interrupt();
+        }
+
+        if (call.error != null){
+            if (call.error instanceof RemoteException){
+                //远程异常
+                call.error.fillInStackTrace();
+                throw call.error;
+            }else {
+                //本地异常
+                InetSocketAddress address = connection.getServer();
+                Class<? extends Throwable> clazz = call.error.getClass();
+                try {
+                    Constructor<? extends Throwable> ctor = clazz.getConstructor(String.class);
+                    String msg = "Call From " + InetAddress.getLocalHost()
+                            + "to" + address.getHostName() + ":" + address.getPort()
+                            + "failed on exception: " + call.error;
+                    Throwable t = ctor.newInstance(msg);
+                    /** 将call.error指定为当前异常对象t的cause，然后抛出 */
+                    t.initCause(call.error);
+                    throw t;
+                }catch (Throwable e){
+                    LOG.warn("Unable to construct exception of type " +
+                            clazz + ": it has no (String) constructor", e);
+                    throw call.error;
+                }
+            }
+        }else {
+            return call.getRpcResponse();
+        }
+    }
+
+    Call createCall(RPC.RpcKind rpcKind, Writable rpcRequest){
+        return new Call(rpcKind, rpcRequest);
     }
 
     /**
