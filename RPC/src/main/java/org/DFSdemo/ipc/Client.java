@@ -163,7 +163,29 @@ public class Client {
 
 
     public void stop(){
+        if (LOG.isDebugEnabled()){
+            LOG.debug("Stopping client");
+        }
+        //将running设置为false，表示客户端不再运行
+        if (!running.compareAndSet(true, false)){
+            return;
+        }
 
+        //锁住connections并中断所有的connection线程以响应客户端的停止
+        synchronized (connections){
+            for (Connection connection : connections.values()){
+                connection.interrupt();
+            }
+        }
+
+        //等待，直到所有connection关闭
+        while (!connections.isEmpty()){
+            try {
+                Thread.sleep(100);
+            }catch (InterruptedException e){
+            }
+        }
+        clientExecutorFactory.unrefAndCleanup();
     }
 
     /**
