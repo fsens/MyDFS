@@ -8,10 +8,8 @@ import org.apache.commons.logging.LogFactory;
 import javax.net.SocketFactory;
 import java.io.Closeable;
 import java.io.IOException;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.Proxy;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -153,6 +151,128 @@ public class RPC {
 
         RpcKind(short value){
             this.value = value;
+        }
+    }
+
+    /**
+     * RPC Server
+     */
+    public abstract static class Server extends org.DFSdemo.ipc.Server{
+        /** 控制打印日志的开关，该值由下游Server决定 */
+        boolean verbose;
+
+        /**
+         * 由于父类是抽象类，它的构造方法不能被继承，所以子类得实现自己的构造方法，即使和父类的一样
+         *
+         * @param bindAddress 服务端地址
+         * @param port 服务端接口
+         * @param numHandlers Handler线程的数量
+         * @param numReaders Reader线程的数量
+         * @param queueSizePerHandler 每个Handler期望的消息队列大小， 再根据numHandlers可以得出队列总大小
+         * @param conf 配置
+         * @throws IOException
+         */
+        protected Server(String bindAddress, int port,
+                         int numHandlers, int numReaders, int queueSizePerHandler,
+                         Configuration conf) throws IOException{
+            //调用父类的构造方法来实例化父类的成员变量
+            super(bindAddress, port, numHandlers, numReaders, queueSizePerHandler, conf);
+        }
+
+        /**
+         * 存储协议（接口）的名称（还可以拓展存储其他的信息，如版本等），用来当作map的key
+         */
+        static class ProtoName{
+            final String protoName;
+
+            ProtoName(String protoName){
+                this.protoName = protoName;
+            }
+
+            @Override
+            public boolean equals(Object obj){
+                if (obj == null){
+                    return false;
+                }
+                if (this == obj){
+                    return true;
+                }
+                if (! (obj instanceof ProtoName)){
+                    return false;
+                }
+                ProtoName pn = (ProtoName) obj;
+                return (this.protoName.equals(pn.protoName));
+            }
+
+            @Override
+            public int hashCode(){
+                //随便乘一个质数
+                return protoName.hashCode() * 37;
+            }
+        }
+
+        /**
+         * 存储协议（接口）的Class对象及其实现实例，作为value
+         */
+        static class ProtoClassProtoImpl{
+            Class<?> protocolClass;
+            Object protocolImpl;
+
+            ProtoClassProtoImpl(Class<?> protocolClass, Object protocolImpl){
+                this.protocolClass = protocolClass;
+                this.protocolImpl = protocolImpl;
+            }
+        }
+
+        /** 存储server不同序列化方式对应的协议map */
+        ArrayList<Map<ProtoName, ProtoClassProtoImpl>> protocolImplMapArray =
+                new ArrayList<>(RpcKind.MAX_INDEX);
+
+        /**
+         *获得对应RPC序列化方式的HashMap对象
+         *
+         * @param rpcKind
+         * @return
+         */
+        Map<ProtoName, ProtoClassProtoImpl> getProtocolImplMap(RpcKind rpcKind){
+            /** 懒加载--直到要用到的时候再加载 */
+            if (protocolImplMapArray.size() == 0){
+                /** 初始化，为每一种序列化方式添加一个HashMap对象 */
+                for (int i = 0; i < RpcKind.MAX_INDEX ; i++){
+                    /** 设定HashMap初始化容量为10个key--var。初始化空间设置稍大一点，避免使用的时候容量不足而频繁扩容，也不至于浪费过多空间 */
+                    protocolImplMapArray.add(new HashMap<ProtoName, ProtoClassProtoImpl>(10));
+                }
+            }
+
+            return protocolImplMapArray.get(rpcKind.ordinal());
+        }
+
+        /**
+         * 注册接口及其实例的键值对
+         *
+         * @param rpcKind rpc类型
+         * @param protocolClass 接口（协议）
+         * @param protocolImpl 接口（协议）的实现实例
+         */
+        void registerProtocolAndImpl(RpcKind rpcKind, Class<?> protocolClass, Object protocolImpl){
+            String protocolName = RPC.getProtocolName(protocolClass);
+
+            getProtocolImplMap(rpcKind).put(new ProtoName(protocolName), new ProtoClassProtoImpl(protocolClass, protocolImpl));
+            LOG.debug("RpcKind = " + rpcKind + "Protocol Name = " + protocolName +
+                    "ProtocolImpl=" + protocolImpl.getClass().getName() +
+                    "protocolClass=" + protocolClass.getName());
+        }
+
+        /**
+         * 提供给上游调用
+         * 向server中增加接口（协议）及其实例的键值对
+         *
+         * @param rpcKind rpc类型
+         * @param protocolClass 接口（协议）
+         * @param protocolImpl 接口（协议）的实现实例
+         */
+        public void addProtocol(RpcKind rpcKind, Class<?> protocolClass, Object protocolImpl){
+            registerProtocolAndImpl(rpcKind, protocolClass, protocolImpl);
         }
     }
 

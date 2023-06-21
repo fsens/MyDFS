@@ -14,6 +14,7 @@ public interface RpcEngine {
 
     /**
      * 获取客户端的代理对象
+     *
      * @param protocol 需要代理的接口
      * @param address 服务端地址
      * @param conf 配置
@@ -28,4 +29,24 @@ public interface RpcEngine {
                    Configuration conf,
                    SocketFactory factory,
                    int rpcTimeout) throws IOException;
+
+    /**
+     * 返回一个Server实例
+     *
+     * @param protocol 接口（协议）
+     * @param instance 接口（协议）的实例
+     * @param bindAddress 服务端地址
+     * @param port 服务端接口
+     * @param numHandlers Handler线程的数量
+     * @param numReaders Reader线程的数量
+     * @param queueSizePerHandler 每个Handler期望的消息队列大小
+     * @param verbose 是否对调用信息打log
+     * @param conf Configuration对象
+     * @return Server实例
+     * @throws IOException
+     */
+    RPC.Server getServer(Class<?> protocol, Object instance,
+                         String bindAddress, int port,
+                         int numHandlers, int numReaders,
+                         int queueSizePerHandler, boolean verbose, Configuration conf) throws IOException;
 }
