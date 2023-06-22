@@ -101,7 +101,7 @@ public class ProtobufRpcEngine implements RpcEngine{
             /**
              * 被代理的实际上是PB类，该类将原类的所有方法都转为了两参方法：
              * 1.控制器：一般为null；
-             * 2.xxx.proto类封装的参数
+             * 2.___proto类封装的参数
              */
             if (args.length != NORMAL_ARGS_LEN){
                 throw new ServiceException("Too many parameters for request.Method: ["

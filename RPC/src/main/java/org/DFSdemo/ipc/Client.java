@@ -119,9 +119,9 @@ public class Client {
          * 设置返回值
          * 由于callComplete()方法包含了notify()方法，所以得加synchronized关键字
          *
-         * @param rpcRequest 调用的返回值
+         * @param rpcResponse 调用的返回值
          */
-        public synchronized void setRpcResponse(Writable rpcRequest){
+        public synchronized void setRpcResponse(Writable rpcResponse){
             this.rpcResponse = rpcResponse;
             callComplete();
         }
@@ -343,6 +343,7 @@ public class Client {
      */
     public Writable call(RPC.RpcKind rpcKind, Writable rpcRequest, ConnectionId remoteId, int serviceClass) throws IOException{
         final Call call = createCall(rpcKind, rpcRequest);
+        /** 每一次call调用都会建立一次新的连接 */
         Connection connection = getConnection(remoteId, call, serviceClass);
         try {
             //发送rpc请求
@@ -791,7 +792,7 @@ public class Client {
             /**
              * 序列化需要发送出去的消息，这里由实际调用方法的线程来完成
              * 实际发送前各个线程可以并行地准备（序列化）待发送地信息，而不是发送线程(sendParamExecutor)
-             * 这样做的好处：1.可以减小锁地细粒度；2.序列化过程中抛出的异常每个线程可以单独、独立地报告
+             * 这样做的好处：1.可以减小锁的细粒度；2.序列化过程中抛出的异常每个线程可以单独、独立地报告
              *
              * 发送的格式：
              * 0)下面1、2两项的长度之和，4个字节
@@ -866,7 +867,8 @@ public class Client {
          * 判断是否有服务端响应可接收
          * @return
          */
-        private synchronized boolean waitForWork(){
+        private synchronized boolean
+        waitForWork(){
             if (calls.isEmpty() && !shouldCloseConnection.get() && running.get()){
                 //计算等待时间
                 long timeout = maxIdleTime - (System.currentTimeMillis() - lastActivity.get());

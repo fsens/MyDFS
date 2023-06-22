@@ -276,4 +276,92 @@ public class RPC {
         }
     }
 
+    /**
+     * 该类用于构造RPC Server
+     */
+    public static class Builder{
+
+        private Class<?> protocol;
+        private Object instance;
+        private String bindAddress = "0.0.0.0";
+        private int bindPort = 0;
+        private int numHandlers = 1;
+        private int numReaders = -1;
+        private boolean verbose = false;
+        private int queueSizePerHandler = -1;
+        private Configuration conf;
+
+        public Builder(Configuration conf){
+            this.conf = conf;
+        }
+
+        public Builder setProtocol(Class<?> protocol){
+            this.protocol = protocol;
+            return this;
+        }
+
+        public Builder setInstance(Object instance){
+            this.instance = instance;
+            return this;
+        }
+
+        public Builder setBindAddress(String bindAddress){
+            this.bindAddress = bindAddress;
+            return this;
+        }
+
+        public Builder setBindPort(int bindPort){
+            this.bindPort = bindPort;
+            return this;
+        }
+
+        public Builder setNumHandlers(int numHandlers){
+            this.numHandlers = numHandlers;
+            return this;
+        }
+
+        public Builder setNumReaders(int numReaders){
+            this.numReaders = numReaders;
+            return this;
+        }
+
+        public Builder setVerbose(boolean verbose){
+            this.verbose = verbose;
+            return this;
+        }
+
+        public Builder setQueueSizePerHandler(int queueSizePerHandler){
+            this.queueSizePerHandler = queueSizePerHandler;
+            return this;
+        }
+
+        public Builder setConf(Configuration conf){
+            this.conf = conf;
+            return this;
+        }
+
+        /**
+         * 先根据protocol获取对应的RpcEngine，再获取相应RpcEngine的Server实例
+         *
+         * @return 相应RpcEngine的Server
+         * @throws IOException 发生错误
+         * @throws IllegalArgumentException 没有设置必要的参数
+         */
+        public Server build() throws IOException, IllegalArgumentException{
+            if (this.conf == null){
+                throw new IllegalArgumentException("conf is not set");
+            }
+            if (this.protocol == null){
+                throw new IllegalArgumentException("protocol is not set");
+            }
+            if (this.instance == null){
+                throw new IllegalArgumentException("instance is not set");
+            }
+            return getProtocolEngine(protocol, conf)
+                    .getServer(this.protocol, this.instance, this.bindAddress, this.bindPort,
+                            this.numHandlers, this.numReaders, this.queueSizePerHandler,
+                            this.verbose, this.conf);
+        }
+    }
+
 }

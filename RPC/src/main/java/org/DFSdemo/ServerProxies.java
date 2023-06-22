@@ -71,6 +71,7 @@ public class ServerProxies {
         RPC.setProtocolEngine(conf, ClientNamenodeProtocolPB.class, ProtobufRpcEngine.class);
 
         int rpcTimeOut = 6000;//设置超时阈值为6s
+        /** 获取ClientNamenodeProtocolPB的代理类 */
         ClientNamenodeProtocolPB proxy = RPC.getProtocolProxy(ClientNamenodeProtocolPB.class, address, conf, SocketFactory.getDefault(), rpcTimeOut);
         return new ClientNamenodeProtocolTranslatorPB(proxy);
     }
