@@ -20,6 +20,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.net.InetSocketAddress;
 
+
 /**
  *实现RpcEngine接口，该类为客户端接口提供代理
  */
@@ -27,6 +28,16 @@ public class ProtobufRpcEngine implements RpcEngine{
 
     //用于打印invoke过程中使用ProtobufRpcEngine的日志
     public static final Log LOG = LogFactory.getLog(ProtobufRpcEngine.class);
+
+    /**
+     * 调用registerProtocolEngine完成RpcKind和RpcRequestWrapper的注册
+     */
+    static {
+        org.DFSdemo.ipc.Server.registerProtocolEngine(
+                RPC.RpcKind.RPC_PROTOCOL_BUFFER,
+                RpcRequestWrapper.class,
+                new Server.ProtobufRpcInvoker());
+    }
 
     /** 获取代理对象 */
     @Override
@@ -141,6 +152,7 @@ public class ProtobufRpcEngine implements RpcEngine{
             Message returnMessage = null;
             try {
                 //将远程调用返回值中的二进制返回值（即theResponseRead）复制到新的消息对象中
+                //其实也就是反序列化了返回值
                 returnMessage = protoType.newBuilderForType()
                         .mergeFrom(res.theResponseRead)
                         .build();
@@ -414,5 +426,77 @@ public class ProtobufRpcEngine implements RpcEngine{
             this.verbose = verbose;
             registerProtocolAndImpl(RPC.RpcKind.RPC_PROTOCOL_BUFFER, protocol, protocolImpl);
         }
+
+        static class ProtobufRpcInvoker implements RPC.RpcInvoker{
+            @Override
+            public Writable call(RPC.Server server, String protocol, Writable rpcRequest, long receiveTime)
+                throws Exception{
+                /** 根据rpcRequest获取到请求方法、接口（协议）等信息 */
+                RpcRequestWrapper request = (RpcRequestWrapper) rpcRequest;
+                RequestHeaderProto requestHeader = request.requestHeader;
+                String methodName = requestHeader.getMethodName();
+                String protoName = requestHeader.getDeclaringClassProtocolName();
+
+                if (server.verbose){
+                    LOG.info("Call: protocol=" + protocol + ",method=" + methodName);
+                }
+
+                /** 获取缓存的接口实现类对象 */
+                ProtoClassProtoImpl protoClassProtoImpl = RPC.getProtocolImpl(RPC.RpcKind.RPC_PROTOCOL_BUFFER,
+                        server, protoName);
+
+                /** 通过BlockingService获取到调用方法的methodDescriptor */
+                BlockingService service = (BlockingService) protoClassProtoImpl.protocolImpl;
+                Descriptors.MethodDescriptor methodDescriptor = service.getDescriptorForType().findMethodByName(methodName);
+                if (methodDescriptor == null){
+                    String msg = "Unknown method" + methodName + "called on" + protocol + "protocol.";
+                    LOG.warn(msg);
+                    throw new RpcNoSuchMethodException(msg);
+                }
+                /** 通过BlockingService和methodDescriptor获取到方法参数的类对象protoType */
+                Message protoType = service.getRequestPrototype(methodDescriptor);
+                /** 给方法参数的类对象protoType赋值，其实就是反序列化请求参数 */
+                Message param = protoType.newBuilderForType()
+                        .mergeFrom(request.theRequestRead)
+                        .build();
+
+                Message result;
+
+                long startTime = System.currentTimeMillis();
+                //从接收请求到调用前的时间
+                int qTime = (int) (startTime - receiveTime);
+
+                Exception exception = null;
+
+                try {
+                    /**
+                     * 根据BlockingService的callBlockingMethod方法调用请求的方法，最终会执行
+                     * ClientNamenodeProtocolServerSideTranslatorPB中的方法
+                     */
+                    result = service.callBlockingMethod(methodDescriptor, null, param);
+                }catch (ServiceException se){
+                    //获取根本原因
+                    exception = (Exception) se.getCause();
+                    throw exception;
+                }catch (Exception e){
+                    exception = e;
+                    throw exception;
+                }finally {
+                    //处理请求的时间
+                    long processTime = (int) (System.currentTimeMillis() - startTime);
+                    if (LOG.isDebugEnabled()){
+                        String msg = "Served:" + methodName + "queueTime= " + qTime +
+                                "processingTime= " + processTime;
+                        if (exception != null){
+                            msg += "exception= " + exception.getClass().getSimpleName();
+                        }
+                        LOG.debug(msg);
+                    }
+                }
+                /** 将返回结果构造为RpcResponseWrapper对象，以便后续能够序列化发送给客户端 */
+                return new RpcResponseWrapper(result);
+            }
+        }
     }
+
 }

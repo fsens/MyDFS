@@ -1,10 +1,13 @@
 package org.DFSdemo.ipc;
 
 import org.DFSdemo.conf.Configuration;
+import org.DFSdemo.io.Writable;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 public abstract class Server {
 
@@ -45,6 +48,43 @@ public abstract class Server {
         while (running){
             wait();
         }
+    }
+
+    /** 保存RPC类型与RpcKindMapValue的对应关系 */
+    static Map<RPC.RpcKind, RpcKindMapValue> rpcKindMap = new HashMap<>();
+
+    /**
+     * 作为rpcKindMap的value，封装了调用请求的封装类和方法调用类
+     */
+    static class RpcKindMapValue{
+        final Class<? extends Writable> rpcRequestWrapperClass;
+        final RPC.RpcInvoker rpcInvoker;
+
+        RpcKindMapValue(Class<? extends Writable> rpcRequestWrapperClass, RPC.RpcInvoker rpcInvoker){
+            this.rpcRequestWrapperClass = rpcRequestWrapperClass;
+            this.rpcInvoker = rpcInvoker;
+        }
+    }
+
+    /**
+     * 将RpcKind对象和RpcKindMapValue对象组成的键值对写入rpcKindMap集合
+     *
+     * @param rpcKind RPC.RpcKind对象
+     * @param rpcRequestWrapperClass 调用请求的封装类的Class对象
+     * @param rpcInvoker 服务端方法调用类对象
+     */
+    static void registerProtocolEngine(RPC.RpcKind rpcKind,
+                                       Class<? extends Writable> rpcRequestWrapperClass,
+                                       RPC.RpcInvoker rpcInvoker){
+        RpcKindMapValue rpcKindMapValue = new RpcKindMapValue(rpcRequestWrapperClass, rpcInvoker);
+        RpcKindMapValue old = rpcKindMap.put(rpcKind, rpcKindMapValue);
+        if (old != null){
+            rpcKindMap.put(rpcKind, old);
+            throw new IllegalArgumentException("ReRegistration of rpcKind:" + rpcKind);
+        }
+        LOG.debug("rpcKind=" + rpcKind +
+                ", rpcRequestWrapperClass=" + rpcRequestWrapperClass +
+                ",rpcInvoker=" + rpcInvoker);
     }
 
 }

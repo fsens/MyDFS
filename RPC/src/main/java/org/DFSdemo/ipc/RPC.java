@@ -1,6 +1,7 @@
 package org.DFSdemo.ipc;
 
 import org.DFSdemo.conf.Configuration;
+import org.DFSdemo.io.Writable;
 import org.DFSdemo.util.ReflectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -362,6 +363,23 @@ public class RPC {
                             this.numHandlers, this.numReaders, this.queueSizePerHandler,
                             this.verbose, this.conf);
         }
+    }
+
+    /**
+     * 处理各序列化方式的客户端请求调用的公共接口
+     */
+    interface RpcInvoker{
+        /**
+         * 服务端实现该方法，用来完成客户端请求的方法调用
+         *
+         * @param server RPC.Server对象，用来获取服务端的属性
+         * @param protocol 客户端请求的接口（协议）
+         * @param rpcRequest 客户端调用请求的封装类对象（反序列化后的）
+         * @param receiveTime 开始本次RPC请求的时间
+         * @return 方法调用的返回值
+         * @throws Exception
+         */
+        Writable call(Server server, String protocol, Writable rpcRequest, long receiveTime) throws Exception;
     }
 
 }
