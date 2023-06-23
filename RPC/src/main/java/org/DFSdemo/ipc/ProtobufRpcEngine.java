@@ -20,6 +20,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.net.InetSocketAddress;
 
+
 /**
  *实现RpcEngine接口，该类为客户端接口提供代理
  */
@@ -27,6 +28,16 @@ public class ProtobufRpcEngine implements RpcEngine{
 
     //用于打印invoke过程中使用ProtobufRpcEngine的日志
     public static final Log LOG = LogFactory.getLog(ProtobufRpcEngine.class);
+
+    /**
+     * 调用registerProtocolEngine完成RpcKind和RpcRequestWrapper的注册
+     */
+    static {
+        org.DFSdemo.ipc.Server.registerProtocolEngine(
+                RPC.RpcKind.RPC_PROTOCOL_BUFFER,
+                RpcRequestWrapper.class,
+                new Server.ProtobufRpcInvoker());
+    }
 
     /** 获取代理对象 */
     @Override
@@ -487,4 +498,5 @@ public class ProtobufRpcEngine implements RpcEngine{
             }
         }
     }
+
 }
