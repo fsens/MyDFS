@@ -40,4 +40,11 @@ public abstract class Server {
     public void start(){
 
     }
+
+    public synchronized void join() throws InterruptedException{
+        while (running){
+            wait();
+        }
+    }
+
 }

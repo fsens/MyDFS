@@ -22,6 +22,14 @@ public class Namenode {
 
     private ClientProtocolRpcServer clientProtocolRpcServer;
 
+    public static void main(String[] args) throws IOException{
+        Configuration conf = new Configuration();
+        conf.set(CommonConfigurationKeysPublic.NAMENODE_RPC_PROTOBUF_KEY, "namenode://localhost:8866");
+
+        Namenode namenode = new Namenode(conf);
+        namenode.join();
+    }
+
     public Namenode(Configuration conf) throws IOException{
         init(conf);
     }
@@ -53,6 +61,14 @@ public class Namenode {
      */
     ClientProtocolRpcServer createRpcServer(Configuration conf) throws IOException{
         return new ClientProtocolRpcServer(conf);
+    }
+
+    public void join(){
+        try {
+            clientProtocolRpcServer.join();
+        }catch (InterruptedException ie){
+            LOG.info("Caught interrupted exception", ie);
+        }
     }
 
     /**

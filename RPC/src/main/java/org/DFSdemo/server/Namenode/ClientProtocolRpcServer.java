@@ -76,6 +76,10 @@ public class ClientProtocolRpcServer implements ClientProtocol {
         protoBufRpcServer.start();
     }
 
+    void join() throws InterruptedException{
+        protoBufRpcServer.join();
+    }
+
     @Override
     public boolean rename2(String src, String dst) throws IOException {
         //TODO:Namenode实现rename2
