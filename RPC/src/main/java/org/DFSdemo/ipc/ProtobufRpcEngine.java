@@ -442,8 +442,7 @@ public class ProtobufRpcEngine implements RpcEngine{
                 }
 
                 /** 获取缓存的接口实现类对象 */
-                ProtoClassProtoImpl protoClassProtoImpl = RPC.getProtocolImpl(RPC.RpcKind.RPC_PROTOCOL_BUFFER,
-                        server, protoName);
+                ProtoClassProtoImpl protoClassProtoImpl = RPC.getProtocolImp(RPC.RpcKind.RPC_PROTOCOL_BUFFER, server, protoName);
 
                 /** 通过BlockingService获取到调用方法的methodDescriptor */
                 BlockingService service = (BlockingService) protoClassProtoImpl.protocolImpl;

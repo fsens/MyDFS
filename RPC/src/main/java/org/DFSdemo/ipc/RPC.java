@@ -232,8 +232,8 @@ public class RPC {
         /**
          *获得对应RPC序列化方式的HashMap对象
          *
-         * @param rpcKind
-         * @return
+         * @param rpcKind RPC.RpcKind
+         * @return RpcKind对应的HashMap对象
          */
         Map<ProtoName, ProtoClassProtoImpl> getProtocolImplMap(RpcKind rpcKind){
             /** 懒加载--直到要用到的时候再加载 */
@@ -380,6 +380,30 @@ public class RPC {
          * @throws Exception
          */
         Writable call(Server server, String protocol, Writable rpcRequest, long receiveTime) throws Exception;
+    }
+
+    /**
+     * 根据RpcKind和Server.ProtoName对象获取对应接口实现的缓存对象
+     *
+     * @param rpcKind 序列化方式
+     * @param server RPC.Server对象，
+     *               含有{@link RPC.Server.ProtoName}作为key，{@link RPC.Server.ProtoClassProtoImpl}作为value的HashMap
+     *               以及获取它们的方法
+     * @param protocolName 协议名，是{@link RPC.Server.ProtoName}中的属性
+     * @return RpcKind和Server.ProtoName对象映射出的接口实现的缓存对象
+     * @throws RpcServerException
+     */
+    static Server.ProtoClassProtoImpl getProtocolImp(
+            RPC.RpcKind rpcKind,
+            RPC.Server server,
+            String protocolName
+    )throws RpcServerException{
+        Server.ProtoName pn = new Server.ProtoName(protocolName);
+        Server.ProtoClassProtoImpl impl = server.getProtocolImplMap(rpcKind).get(pn);
+        if (impl == null){
+            throw new RpcNoSuchMethodException("Unknown protocol: " + protocolName);
+        }
+        return impl;
     }
 
 }
