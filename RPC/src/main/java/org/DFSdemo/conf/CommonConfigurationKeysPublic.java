@@ -100,4 +100,12 @@ public class CommonConfigurationKeysPublic {
     public static final String IPC_CLIENT_KILL_MAX_KEY = "ipc.client.kill.max";
     /** IPC_CLIENT_KILL_MAX_KEY 的默认值，10 */
     public static final int IPC_CLIENT_KILL_MAX_DEFAULT = 10;
+
+    /** Namenode rpc 服务端 handler 线程个数 */
+    public static final String NAMENODE_HANDLER_COUNT_KEY = "dfs.namenode.handler.count";
+    /** NAMENODE_HANDLER_COUNT_KEY的默认值：10 */
+    public static final int NAMENODE_HANDLER_COUNT_DEFAULT = 10;
+
+    /** Protobuf RPC Server的uri */
+    public static final String NAMENODE_RPC_PROTOBUF_KEY = "namenode.rpc.uri.protobuf";
 }

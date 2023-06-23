@@ -5,7 +5,7 @@ import org.DFSdemo.ipc.ProtobufRpcEngine;
 import org.DFSdemo.ipc.RPC;
 import org.DFSdemo.protocol.ClientProtocol;
 import org.DFSdemo.protocolPB.ClientNamenodeProtocolPB;
-import org.DFSdemo.protocolTranslatorPB.ClientNamenodeProtocolTranslatorPB;
+import org.DFSdemo.protocolPB.ClientNamenodeProtocolTranslatorPB;
 import org.DFSdemo.server.Namenode.Namenode;
 
 import javax.net.SocketFactory;
@@ -71,6 +71,7 @@ public class ServerProxies {
         RPC.setProtocolEngine(conf, ClientNamenodeProtocolPB.class, ProtobufRpcEngine.class);
 
         int rpcTimeOut = 6000;//设置超时阈值为6s
+        /** 获取ClientNamenodeProtocolPB的代理类 */
         ClientNamenodeProtocolPB proxy = RPC.getProtocolProxy(ClientNamenodeProtocolPB.class, address, conf, SocketFactory.getDefault(), rpcTimeOut);
         return new ClientNamenodeProtocolTranslatorPB(proxy);
     }

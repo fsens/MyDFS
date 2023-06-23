@@ -40,6 +40,15 @@ public class ProtobufRpcEngine implements RpcEngine{
         return (T) Proxy.newProxyInstance(protocol.getClassLoader(),new Class[]{protocol},invoker);
     }
 
+    @Override
+    public RPC.Server getServer(Class<?> protocol, Object instance,
+                                String bindAddress, int port,
+                                int numHandlers, int numReaders,
+                                int queueSizePerHandler, boolean verbose, Configuration conf) throws IOException {
+        return new Server(protocol, instance, bindAddress, port,
+                numHandlers, numReaders, queueSizePerHandler, verbose, conf);
+    }
+
     /** Invoker作为代理类，代理对象的方法实际上是在这里面定义的 */
     private static class Invoker implements RpcInvocationHandler {
 
@@ -92,7 +101,7 @@ public class ProtobufRpcEngine implements RpcEngine{
             /**
              * 被代理的实际上是PB类，该类将原类的所有方法都转为了两参方法：
              * 1.控制器：一般为null；
-             * 2.xxx.proto类封装的参数
+             * 2.___proto类封装的参数
              */
             if (args.length != NORMAL_ARGS_LEN){
                 throw new ServiceException("Too many parameters for request.Method: ["
@@ -378,6 +387,32 @@ public class ProtobufRpcEngine implements RpcEngine{
         @Override
         RpcHeaderProtos.RpcRequestHeaderProto parseHeaderFrom(byte[] bytes) throws IOException{
             return RpcHeaderProtos.RpcRequestHeaderProto.parseFrom(bytes);
+        }
+    }
+
+    private static class Server extends RPC.Server{
+        /**
+         * 构造protocol buffer rpc server
+         *
+         * @param protocol 接口（协议）
+         * @param protocolImpl 接口（协议）的实例
+         * @param bindAddress 服务端地址
+         * @param port 服务端接口
+         * @param numHandlers handler线程个数
+         * @param numReaders reader线程个数
+         * @param queueSizePerHandler 每Handler期望的消息队列大小
+         * @param verbose 是否对调用信息打log
+         * @param conf Configuration对象
+         * @throws IOException
+         */
+        public Server(Class<?> protocol, Object protocolImpl,
+                      String bindAddress, int port,
+                      int numHandlers, int numReaders,
+                      int queueSizePerHandler, boolean verbose,
+                      Configuration conf) throws IOException{
+            super(bindAddress, port, numHandlers, numReaders, queueSizePerHandler, conf);
+            this.verbose = verbose;
+            registerProtocolAndImpl(RPC.RpcKind.RPC_PROTOCOL_BUFFER, protocol, protocolImpl);
         }
     }
 }

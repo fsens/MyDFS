@@ -119,9 +119,9 @@ public class Client {
          * 设置返回值
          * 由于callComplete()方法包含了notify()方法，所以得加synchronized关键字
          *
-         * @param rpcRequest 调用的返回值
+         * @param rpcResponse 调用的返回值
          */
-        public synchronized void setRpcResponse(Writable rpcRequest){
+        public synchronized void setRpcResponse(Writable rpcResponse){
             this.rpcResponse = rpcResponse;
             callComplete();
         }
@@ -343,6 +343,7 @@ public class Client {
      */
     public Writable call(RPC.RpcKind rpcKind, Writable rpcRequest, ConnectionId remoteId, int serviceClass) throws IOException{
         final Call call = createCall(rpcKind, rpcRequest);
+        /** 每一次call调用都会建立一次新的连接(???不应该这样啊???) */
         Connection connection = getConnection(remoteId, call, serviceClass);
         try {
             //发送rpc请求
@@ -565,7 +566,7 @@ public class Client {
 
         /**
          * 向该Connection对象的Call队列中加入一个call
-         * 同时唤醒所有在this上等待的线程
+         * 同时唤醒一个在this上等待的线程
          *
          * @param call 加入待处理call队列的元素
          * @return 如果连接处于关闭状态，返回false；如果call正确加入了队列，则返回true
@@ -576,6 +577,7 @@ public class Client {
             }
             calls.put(call.id, call);
             //随机唤醒一个在this上等待的线程，使用notify性能更好（这里我们更关注性能而不是公平性）
+            //在本程序中，实际上只有waitForWork()方法才在connection对象上调用了wait()方法，所以这实际上是唤醒connection线程(接收线程)的
             notify();
             return true;
         }
@@ -791,7 +793,7 @@ public class Client {
             /**
              * 序列化需要发送出去的消息，这里由实际调用方法的线程来完成
              * 实际发送前各个线程可以并行地准备（序列化）待发送地信息，而不是发送线程(sendParamExecutor)
-             * 这样做的好处：1.可以减小锁地细粒度；2.序列化过程中抛出的异常每个线程可以单独、独立地报告
+             * 这样做的好处：1.可以减小锁的细粒度；2.序列化过程中抛出的异常每个线程可以单独、独立地报告
              *
              * 发送的格式：
              * 0)下面1、2两项的长度之和，4个字节
@@ -817,6 +819,7 @@ public class Client {
                         /** 多线程并发调用服务端，需要锁住输出流out，防止冲突 */
                         try {
                             //由于这是内部类(匿名内部类),访问外部类的非静态属性的方法是:外部类.this.属性名
+                            //其他线程可能在使用out写header
                             synchronized (Connection.this.out){
                                 if (shouldCloseConnection.get()){
                                     return;
