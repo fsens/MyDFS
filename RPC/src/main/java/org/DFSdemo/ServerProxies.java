@@ -5,7 +5,7 @@ import org.DFSdemo.ipc.ProtobufRpcEngine;
 import org.DFSdemo.ipc.RPC;
 import org.DFSdemo.protocol.ClientProtocol;
 import org.DFSdemo.protocolPB.ClientNamenodeProtocolPB;
-import org.DFSdemo.protocolTranslatorPB.ClientNamenodeProtocolTranslatorPB;
+import org.DFSdemo.protocolPB.ClientNamenodeProtocolTranslatorPB;
 import org.DFSdemo.server.Namenode.Namenode;
 
 import javax.net.SocketFactory;

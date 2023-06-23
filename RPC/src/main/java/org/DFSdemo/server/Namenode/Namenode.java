@@ -1,5 +1,8 @@
 package org.DFSdemo.server.Namenode;
 
+import org.DFSdemo.conf.CommonConfigurationKeysPublic;
+import org.DFSdemo.conf.Configuration;
+
 import java.net.InetSocketAddress;
 import java.net.URI;
 
@@ -10,8 +13,20 @@ public class Namenode {
     private static final String NAMENODE_URI_SCHEMA = "namenode";
     private static final int NAMENODE_URI_DEFAULT_PORT = 8866;
 
+    private static final String DEFAULT_URI = "uri://";
+
+    private static URI getDefaultUri(Configuration conf, String key){
+        return URI.create(conf.get(key, DEFAULT_URI));
+    }
+
+    protected static InetSocketAddress getProtoBufRpcServerAddress(Configuration conf){
+        URI uri = getDefaultUri(conf, CommonConfigurationKeysPublic.NAMENODE_RPC_PROTOBUF_KEY);
+        return getAddress(uri);
+    }
+
     /**
      * 根据host获取InetSocketAddress
+     *
      * @param host 远程连接的主机名
      * @return InetSocketAddress
      */
@@ -21,6 +36,7 @@ public class Namenode {
 
     /**
      * 根据URI获取InetSocketAddress
+     *
      * @param namenodeUri 远程连接的URI
      * @return InetSocketAddress
      */
@@ -34,4 +50,5 @@ public class Namenode {
         }
         return getAddress(host);
     }
+
 }

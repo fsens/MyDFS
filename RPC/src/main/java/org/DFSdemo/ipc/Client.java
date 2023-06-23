@@ -343,7 +343,7 @@ public class Client {
      */
     public Writable call(RPC.RpcKind rpcKind, Writable rpcRequest, ConnectionId remoteId, int serviceClass) throws IOException{
         final Call call = createCall(rpcKind, rpcRequest);
-        /** 每一次call调用都会建立一次新的连接 */
+        /** 每一次call调用都会建立一次新的连接(???不应该这样啊???) */
         Connection connection = getConnection(remoteId, call, serviceClass);
         try {
             //发送rpc请求
@@ -566,7 +566,7 @@ public class Client {
 
         /**
          * 向该Connection对象的Call队列中加入一个call
-         * 同时唤醒所有在this上等待的线程
+         * 同时唤醒一个在this上等待的线程
          *
          * @param call 加入待处理call队列的元素
          * @return 如果连接处于关闭状态，返回false；如果call正确加入了队列，则返回true
@@ -577,6 +577,7 @@ public class Client {
             }
             calls.put(call.id, call);
             //随机唤醒一个在this上等待的线程，使用notify性能更好（这里我们更关注性能而不是公平性）
+            //在本程序中，实际上只有waitForWork()方法才在connection对象上调用了wait()方法，所以这实际上是唤醒connection线程(接收线程)的
             notify();
             return true;
         }
@@ -818,6 +819,7 @@ public class Client {
                         /** 多线程并发调用服务端，需要锁住输出流out，防止冲突 */
                         try {
                             //由于这是内部类(匿名内部类),访问外部类的非静态属性的方法是:外部类.this.属性名
+                            //其他线程可能在使用out写header
                             synchronized (Connection.this.out){
                                 if (shouldCloseConnection.get()){
                                     return;
@@ -867,8 +869,7 @@ public class Client {
          * 判断是否有服务端响应可接收
          * @return
          */
-        private synchronized boolean
-        waitForWork(){
+        private synchronized boolean waitForWork(){
             if (calls.isEmpty() && !shouldCloseConnection.get() && running.get()){
                 //计算等待时间
                 long timeout = maxIdleTime - (System.currentTimeMillis() - lastActivity.get());
