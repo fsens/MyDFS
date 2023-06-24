@@ -16,12 +16,9 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.BlockingDeque;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingDeque;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public abstract class Server {
 
@@ -340,7 +337,187 @@ public abstract class Server {
     }
 
     private class ConnectionManager{
+        /** 当前网络连接的数量 */
+        private final AtomicInteger count = new AtomicInteger();
+        /** 存放所有的网络连接 */
+        private Set<Connection> connections;
 
+        /** 扫描空闲连接的定时器 */
+        final private Timer idleScanTimer;
+        /** 定时器延迟多久时间后执行，单位：毫秒 */
+        final private int idleScanInterval;
+        /** 需要关闭空闲连接的阈值，当前连接数超过该阈值便关闭空闲的连接 */
+        final private int idleScanThreshold;
+        /** 允许网络连接的最大空闲时间，超过该时间有可能被回收 */
+        final private int maxIdleTime;
+        /** 每一次扫描关闭的最大的连接数量 */
+        final private int maxIdleToClose;
+
+        ConnectionManager(){
+            this.idleScanTimer = new Timer("IPC Server idle connection scanner for port" + port, true);
+            this.idleScanInterval = conf.getInt(
+                    CommonConfigurationKeysPublic.IPC_CLIENT_CONNECTION_IDLESCANINTERVAL_KEY,
+                    CommonConfigurationKeysPublic.IPC_CLIENT_CONNECTION_IDLESCANINTERVAL_DEFAULT);
+            this.idleScanThreshold = conf.getInt(
+                    CommonConfigurationKeysPublic.IPC_CLIENT_IDLETHRESHOLD_KEY,
+                    CommonConfigurationKeysPublic.IPC_CLIENT_IDLETHRESHOLD_DEFAULT);
+            this.maxIdleTime = conf.getInt(
+                    CommonConfigurationKeysPublic.IPC_CLIENT_CONNECTION_MAXIDLETIME_KEY,
+                    CommonConfigurationKeysPublic.IPC_CLIENT_CONNECTION_MAXIDLETIME_DEFAULT);
+            this.maxIdleToClose = conf.getInt(
+                    CommonConfigurationKeysPublic.IPC_CLIENT_KILL_MAX_KEY,
+                    CommonConfigurationKeysPublic.IPC_CLIENT_KILL_MAX_DEFAULT);
+            /** 线程安全的 */
+            this.connections = Collections.newSetFromMap(
+                    new ConcurrentHashMap<Connection, Boolean>(maxQueueSize));
+        }
+
+        private boolean add(Connection connection){
+            boolean added = connections.add(connection);
+            if (added){
+                count.getAndIncrement();
+            }
+            return added;
+        }
+
+        private boolean remove(Connection connection){
+            boolean removed = connections.remove(connection);
+            if (removed){
+                count.getAndDecrement();
+            }
+            return removed;
+        }
+
+        /**
+         * 获取当前连接数
+         *
+         * @return 当前连接数
+         */
+        int size(){
+            return count.get();
+        }
+
+        /**
+         * 为NIO通道创建Connection对象
+         *
+         * @param channel NIO通道
+         * @return 创建的Connection对象
+         */
+        Connection register(SocketChannel channel){
+            Connection connection = new Connection(channel, System.currentTimeMillis());
+            add(connection);
+            if (LOG.isDebugEnabled()){
+                LOG.debug("Server connection from" + connection +
+                        "; # active connections:" + size() +
+                        "; # queued calls: " + callQueue.size());
+            }
+            return connection;
+        }
+
+        /**
+         * 关闭当前连接
+         *
+         * @param connection 当前连接
+         * @return 成功与否
+         */
+        private boolean close(Connection connection){
+            boolean exists = remove(connection);
+            if (exists){
+                LOG.debug(Thread.currentThread().getName() +
+                        ": disconnection client " + connection +
+                        ". Number of active connections: " + size());
+                connection.close();
+            }
+            return exists;
+        }
+
+        /**
+         * 关闭所有连接
+         */
+        private void closeAll(){
+            for (Connection connection : connections){
+                close(connection);
+            }
+        }
+
+        /**
+         * 关闭空闲的连接
+         *
+         * @param scanAll 是否扫描所有的connection
+         */
+        synchronized void closeIdle(boolean scanAll){
+            long minLastContact = System.currentTimeMillis() - maxIdleTime;
+
+            /**
+             * 下面迭代的过程中可能遍历不到新插入的Connection对象
+             * 但是没有关系，因为新的Connection对象不会是空闲的
+             */
+            int closed = 0;
+            for (Connection connection : connections){
+                /**
+                 * 不需要扫描全部的情况下，如果没有达到扫描空闲connection的阈值
+                 * 或者下面代码关闭连接导致剩余连接小于idleScanThreshold时，便退出循环
+                 */
+                if (!scanAll && size() < idleScanThreshold){
+                    break;
+                }
+
+                /**
+                 * 关闭空闲的连接，由于Java && 的短路运算，
+                 * 如果scanAll == false，最多关闭maxIdleToClose个连接，否则全关闭
+                 */
+                if (connection.isIdle() &&
+                        connection.getLastContact() < minLastContact &&
+                        close(connection) &&
+                        !scanAll && (++closed==maxIdleToClose)){
+                    break;
+                }
+            }
+        }
+
+        /**
+         * 定期扫描连接并关闭空闲连接
+         * 默认不扫描所有的连接
+         */
+        private void scheduleIdleScanTask(){
+            if (!running){
+                return;
+            }
+            TimerTask idleCloseTask = new TimerTask() {
+                @Override
+                public void run() {
+                    if (!running){
+                        return;
+                    }
+                    if (LOG.isDebugEnabled()){
+                        LOG.debug(Thread.currentThread().getName() + ": task running");
+                    }
+
+                    try {
+                        closeIdle(false);
+                    }finally {
+                        /** 定时器只调度一次，所以本次任务执行完后手动再次添加到定时器中 */
+                        scheduleIdleScanTask();
+                    }
+                }
+            };
+            /** 将idleCloseTask任务放入定时器idleScanTimer中 */
+            idleScanTimer.schedule(idleCloseTask, idleScanInterval);
+        }
+
+        /**
+         * 启动定时任务
+         */
+        void startIdleScan(){
+            scheduleIdleScanTask();
+        }
+
+        /**
+         * 停止定时任务
+         */
+        void stopIdleScan(){
+            idleScanTimer.cancel();
+        }
     }
 
     public static class Call{
