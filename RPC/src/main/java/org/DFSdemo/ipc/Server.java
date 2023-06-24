@@ -219,6 +219,105 @@ public abstract class Server {
             this.setDaemon(true);
         }
 
+        @Override
+        public void run(){
+            LOG.info("Listener thread" + Thread.currentThread().getName() + ": starting");
+            connectionManager.startIdleScan();
+            while (running){
+                SelectionKey key = null;
+                try {
+                    /** 阻塞等待，直到1.至少有一个通道准备好I/O操作或者2.被中断 */
+                    selector.select();
+                    Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
+                    while (iterator.hasNext()){
+                        key = iterator.next();
+                        iterator.remove();
+                        if (key.isValid()){
+                            /** 判断是不是OP_ACCEPT事件 */
+                            if (key.isAcceptable()){
+                                System.out.println("client accept");
+                                doAccept(key);
+                            }
+                        }
+                        key = null;
+                    }
+                }catch (OutOfMemoryError oom){
+                    //out of memory 时，需要关闭所有空闲连接
+                    LOG.warn("Out of Memory in server select", oom);
+                    //关闭当前连接
+                    closeCurrentConnection(key);
+                    connectionManager.closeIdle(true);
+                    try {Thread.sleep(60000);}catch (InterruptedException e){}
+                }catch (Exception e){
+                    closeCurrentConnection(key);
+                }
+            }
+
+            LOG.info("Stopping " + Thread.currentThread().getName());
+
+            try {
+                acceptChannel.close();
+                selector.close();
+            }catch (IOException e){
+                LOG.warn("Ignoring listener close exception", e);
+            }
+
+            acceptChannel = null;
+            selector = null;
+
+            connectionManager.startIdleScan();
+            connectionManager.closeAll();
+        }
+
+        /**
+         * 处理OP_ACCEPT事件
+         *
+         * @param key 响应OP_ACCEPT事件的通道对应的SelectionKey对象
+         * @throws IOException
+         * @throws InterruptedException
+         */
+        void doAccept(SelectionKey key) throws IOException, InterruptedException{
+            ServerSocketChannel server = (ServerSocketChannel) key.channel();
+            SocketChannel channel;
+            while ((channel = server.accept()) != null){
+                channel.configureBlocking(false);
+                channel.socket().setTcpNoDelay(true);
+                channel.socket().setKeepAlive(true);
+
+                /** 为channel创建一个Connection对象 */
+                Connection conn = connectionManager.register(channel);
+                /** 将创建的Connection对象conn附着到key上，方便以后根据key获取该对象 */
+                key.attach(conn);
+
+                Reader reader = getReader();
+                reader.addConnection(conn);
+            }
+        }
+
+        /**
+         * 关闭当前连接
+         *
+         * @param key 当前连接的通道对应的SelectionKey对象
+         */
+        private void closeCurrentConnection(SelectionKey key){
+            if (key != null){
+                Connection conn = (Connection) key.attachment();
+                if (conn != null){
+                    closeConnection(conn);
+                    conn = null;
+                }
+            }
+        }
+
+        private void closeConnection(Connection coon){
+            connectionManager.close(coon);
+        }
+
+        Reader getReader(){
+            currentReader = (currentReader + 1) % readers.length;
+            return readers[currentReader];
+        }
+
         private class Reader extends Thread{
             //线程安全的阻塞队列
             private final BlockingQueue<Connection> pendingConnections;
