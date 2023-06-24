@@ -4,14 +4,24 @@ import org.DFSdemo.conf.CommonConfigurationKeysPublic;
 import org.DFSdemo.conf.Configuration;
 import org.DFSdemo.io.Writable;
 import org.DFSdemo.protocol.RPCConstants;
+import org.DFSdemo.util.ProtoUtil;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
+import java.io.Reader;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.SocketException;
 import java.nio.ByteBuffer;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.ServerSocketChannel;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingDeque;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingDeque;
 
 public abstract class Server {
@@ -176,6 +186,85 @@ public abstract class Server {
      */
     private class Listener extends Thread{
 
+        private ServerSocketChannel acceptChannel;
+        private Selector selector;
+        private Reader[] readers;
+        //当前第几个Reader
+        private int currentReader = 0;
+        private InetSocketAddress address;
+        /** 监听队列的长度 */
+        private int backlogLength = conf.getInt(
+                CommonConfigurationKeysPublic.IPC_SERVER_LISTEN_QUEUE_SIZE_KEY,
+                CommonConfigurationKeysPublic.IPC_SERVER_LISTEN_QUEUE_SIZE_DEFAULT);
+
+        public Listener() throws IOException{
+            this.address = new InetSocketAddress(bindAddress, port);
+            /** 创建服务端socket，并设置为非阻塞 */
+            this.acceptChannel = ServerSocketChannel.open();
+            this.acceptChannel.configureBlocking(false);
+
+            /** 将服务端socket绑定到主机和端口 */
+            bind(acceptChannel.socket(), address, backlogLength);
+            /** 创建selector */
+            this.selector = Selector.open();
+            /** 注册selector */
+            acceptChannel.register(selector, SelectionKey.OP_ACCEPT);
+
+            /** 创建reader线程并启动 */
+            this.readers = new Reader[readThreads];
+            for (int i = 0; i < readThreads; i++ ){
+                Reader reader = new Reader("Socket Reader #" + (i + 1) + "for port" + port);
+                this.readers[i] = reader;
+                reader.start();
+            }
+
+            this.setName("IPC Server listener on" + port);
+            /** 设置为daemon，它的线程也是daemon */
+            this.setDaemon(true);
+        }
+
+        private class Reader extends Thread{
+            //线程安全的阻塞队列
+            private final BlockingQueue<Connection> pendingConnections;
+            private final Selector readSelector;
+
+            Reader(String name) throws IOException{
+                super(name);
+                this.pendingConnections = new LinkedBlockingDeque<>(readerPendingConnectionQueue);
+                readSelector = Selector.open();
+            }
+
+            /**
+             * 生产者将connection入队列，唤醒readSelector
+             *
+             * @param conn 一个新的connection
+             * @throws InterruptedException 当队列满了的时候put操作会阻塞，阻塞过程中可能被中断，抛出InterruptedException
+             */
+            void addConnection(Connection conn) throws InterruptedException{
+                pendingConnections.put(conn);
+                /** 唤醒readSelector */
+                readSelector.wakeup();
+            }
+        }
+
+    }
+
+    /**
+     * 封装socket与address绑定的代码，为了在这层做异常的处理
+     *
+     * @param socket 服务端socket
+     * @param address 需要绑定的地址
+     * @param backlog 服务端监听连接请求的队列长度
+     * @throws IOException
+     */
+    public static void bind(ServerSocket socket, InetSocketAddress address, int backlog) throws IOException{
+        try {
+            socket.bind(address, backlog);
+        }catch (SocketException se){
+            throw new IOException("Failed on local exception:"
+                    + se
+                    + "; bind address: " + address, se);
+        }
     }
 
     /**
