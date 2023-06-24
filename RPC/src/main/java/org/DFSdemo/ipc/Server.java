@@ -10,13 +10,12 @@ import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
 import java.io.Reader;
-import java.net.InetSocketAddress;
-import java.net.ServerSocket;
-import java.net.SocketException;
+import java.net.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -285,6 +284,58 @@ public abstract class Server {
     }
 
     private class Connection{
+        /** 连接的通道 */
+        private SocketChannel channel;
+        /** 网络连接的最新活动时间 */
+        private volatile long lastContact;
+        private Socket socket;
+        private InetAddress remoteAddr;
+        private String hostAddress;
+        private int remotePort;
+        /** 网络连接正在处理的RPC请求数量 */
+        private volatile int rpcCount;
+
+        Connection(SocketChannel channel, long lastContact){
+            this.channel = channel;
+            this.lastContact = lastContact;
+            this.socket = channel.socket();
+            this.remoteAddr = socket.getInetAddress();
+            this.hostAddress = remoteAddr.getHostAddress();
+            this.remotePort = socket.getPort();
+        }
+
+        private void setLastContact(long lastContact){
+            this.lastContact = lastContact;
+        }
+
+        private long getLastContact(){
+            return lastContact;
+        }
+
+        /**
+         * 当前网络是否处于空闲状态
+         */
+        private boolean isIdle(){
+            return rpcCount == 0;
+        }
+
+        /**
+         * rpcCount增加
+         */
+        private void incRpcCount(){
+            rpcCount++;
+        }
+
+        /**
+         * rpcCount减少
+         */
+        private void decRpcCount(){
+            rpcCount--;
+        }
+
+        private synchronized void close(){
+
+        }
 
     }
 
