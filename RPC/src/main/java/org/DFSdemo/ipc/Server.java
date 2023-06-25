@@ -340,6 +340,57 @@ public abstract class Server {
                 /** 唤醒readSelector */
                 readSelector.wakeup();
             }
+
+            @Override
+            public void run(){
+                LOG.info("Starting " + Thread.currentThread().getName());
+                try {
+                    doRunLoop();
+                }finally {
+                    try {
+                        readSelector.close();
+                    }catch (IOException ioe){
+                        LOG.error("Error closing read selector in " + Thread.currentThread().getName(), ioe);
+                    }
+                }
+            }
+
+            /**
+             * 不断消费pendingConnections队列的内容并注册SelectionKey.OP_READ事件
+             */
+            void doRunLoop(){
+                while (running){
+                    SelectionKey key = null;
+                    try {
+                        //只消费当前已入队列的Connection对象
+                        //应该避免在队列上阻塞等待，导致后面select方法得不到调用
+                        int size = pendingConnections.size();
+                        for (int i = 0; i < size; i++){
+                            Connection conn = pendingConnections.take();
+                            /** 每个connection的channel注册OP_READ事件到readSelector上 */
+                            /** 第三个参数是“附着物”，附着到key上，以后可以通过key.attachment()获得 */
+                            conn.channel.register(readSelector, SelectionKey.OP_READ, conn);
+                        }
+                        readSelector.select();
+
+                        Iterator<SelectionKey> iter = readSelector.selectedKeys().iterator();
+                        while (iter.hasNext()){
+                            key = iter.next();
+                            iter.remove();
+                            if (key.isValid() && key.isReadable()){
+                                doRead();
+                            }
+                            key = null;
+                        }
+                    }catch (InterruptedException e){
+                        if (running){
+                            LOG.info(Thread.currentThread().getName() + "unexpectedly interrupted", e);
+                        }
+                    }catch (IOException e){
+                        LOG.error("Error in Reader", e);
+                    }
+                }
+            }
         }
 
     }
@@ -430,6 +481,10 @@ public abstract class Server {
         }
 
         private synchronized void close(){
+
+        }
+
+        void doRead(SelectionKey key) throws InterruptedException{
 
         }
 
