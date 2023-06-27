@@ -253,6 +253,30 @@ public abstract class Server {
     }
 
     /**
+     * 对远程调用请求的实现，其实是调用诸如ProtobufRpcInvoker的call方法实现的
+     * 这个让子类{@link RPC.Server}实现
+     *
+     * @param rpcKind 序列化类型
+     * @param protocol 协议
+     * @param param 客户端请求
+     * @param receiveTime 接收客户端调用的请求的时间
+     * @return 返回值的protobuf类对象
+     * @throws Exception
+     */
+    public abstract Writable call(RPC.RpcKind rpcKind, String protocol, Writable param, long receiveTime) throws Exception;
+
+    /**
+     * 从rpcKindMap中获取对应序列化的rpcInvoker对象
+     *
+     * @param rpcKind 序列化类型
+     * @return 传入序列化类型对应的rpcInvoker对象
+     */
+    public static RPC.RpcInvoker getRpcInvoker(RPC.RpcKind rpcKind){
+        RpcKindMapValue val = rpcKindMap.get(rpcKind);
+        return (val == null) ? null : val.rpcInvoker;
+    }
+
+    /**
      * socket监听线程
      */
     private class Listener extends Thread{
