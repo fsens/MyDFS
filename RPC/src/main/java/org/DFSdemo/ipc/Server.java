@@ -3,19 +3,18 @@ package org.DFSdemo.ipc;
 import org.DFSdemo.conf.CommonConfigurationKeysPublic;
 import org.DFSdemo.conf.Configuration;
 import org.DFSdemo.io.Writable;
+import org.DFSdemo.ipc.protobuf.RpcHeaderProtos;
 import org.DFSdemo.protocol.RPCConstants;
 import org.DFSdemo.util.ProtoUtil;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.io.Reader;
 import java.net.*;
 import java.nio.ByteBuffer;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
-import java.nio.channels.ServerSocketChannel;
-import java.nio.channels.SocketChannel;
+import java.nio.channels.*;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -60,6 +59,80 @@ public abstract class Server {
     private Responder responder;
     private Handler[] handlers = null;
     private Configuration conf;
+
+    /** 当读写buffer的大小超过8KB限制，读写操作的数据将按照该值分隔
+     *  大部分RPC不会超过这个值
+     */
+    private static int NIO_BUFFER_LIMIT = 8*1024;
+
+    /**
+     * 该函数是{@link ReadableByteChannel#read(ByteBuffer)}的wrapper
+     * 如果需要读数据量较大，可以分成从channel读数据。这样，可以避免
+     * 随着ByteBuffer大小的增加，jdk创建大量的buffer，从而避免性能衰减
+     *
+     * @see ReadableByteChannel#read(ByteBuffer)
+     *
+     * @param channel 通道
+     * @param buffer
+     * @return 如果读取成功，则返回读取或者写入的字节数；如果失败，返回0或者-1
+     * @throws IOException
+     */
+    private int channelRead(ReadableByteChannel channel, ByteBuffer buffer) throws IOException{
+        int count = (buffer.remaining() <= NIO_BUFFER_LIMIT) ? channel.read(buffer) : channelIO(channel, null, buffer);
+        return count;
+    }
+
+    /**
+     * 该函数是{@link WritableByteChannel#write(ByteBuffer)}的wrapper
+     * 如果需要读数据量较大，可以分成从channel写数据。这样，可以避免
+     * 随着ByteBuffer大小的增加，jdk创建大量的buffer，从而避免性能衰减
+     *
+     * @see WritableByteChannel#write(ByteBuffer)
+     *
+     * @param channel 通道
+     * @param buffer
+     * @return 如果读取成功，则返回读取或者写入的字节数；如果失败，返回0或者-1
+     * @throws IOException
+     */
+    private int channelWrite(WritableByteChannel channel, ByteBuffer buffer) throws IOException{
+        int count = (buffer.remaining() <= NIO_BUFFER_LIMIT) ? channel.write(buffer) : channelIO(null, channel, buffer);
+        return count;
+    }
+
+    /**
+     * 通道的分批读写，分批的单位是NIO_BUFFER_LIMIT
+     * readCh和writeCh仅有一个非空，当readCh非空代表读通道，当writeCh非空代表写通道
+     *
+     * @param readCh 读通道
+     * @param writeCh 写通道
+     * @param buf 缓冲区
+     * @return 如果读取成功，则返回读取或者写入的字节数；如果失败，返回0或者-1
+     * @throws IOException
+     */
+    private static int channelIO(ReadableByteChannel readCh, WritableByteChannel writeCh, ByteBuffer buf) throws IOException{
+        int originalLimit = buf.limit();
+        int initialRemaining = buf.remaining();
+        int ret = 0;
+        while (buf.remaining() > 0){
+            try {
+                int ioSize = Math.min(buf.remaining(), NIO_BUFFER_LIMIT);
+                buf.limit(buf.position() + ioSize);
+
+                ret = (readCh == null) ? writeCh.write(buf) : readCh.read(buf);
+
+                if (ret < ioSize){
+                    /** 说明管道中的数据已经读取完或者无法写入了，无需再循环 */
+                    break;
+                }
+            }finally {
+                //将limit恢复初始值，以进行下一次的读写
+                buf.limit(originalLimit);
+            }
+        }
+
+        int nBytes = initialRemaining - buf.remaining();
+        return (nBytes > 0) ? nBytes : ret;
+    }
 
     /**
      * Server类的构造方法
@@ -139,6 +212,7 @@ public abstract class Server {
             wait();
         }
     }
+
 
     /** 保存RPC类型与RpcKindMapValue的对应关系 */
     static Map<RPC.RpcKind, RpcKindMapValue> rpcKindMap = new HashMap<>();
@@ -295,6 +369,43 @@ public abstract class Server {
         }
 
         /**
+         * 读取客户端请求
+         *
+         * @param key 注册到选择器的事件
+         * @throws InterruptedException 写入阻塞队列callQueue时可能阻塞等待，阻塞等待的时候可能被中断
+         */
+        void doRead(SelectionKey key) throws InterruptedException{
+            int count;
+            Connection conn = (Connection) key.attachment();
+            if (conn == null){
+                return;
+            }
+            conn.setLastContact(System.currentTimeMillis());
+
+            try {
+                count = conn.readAndProcess();
+            }catch (InterruptedException ie){
+                LOG.info(Thread.currentThread().getName() +
+                        "readAndProcess caught Interrupted", ie);
+                throw ie;
+            }catch (Exception e){
+                /** 这层进行异常的捕获，因为WrappedRpcServerException异常已经发送响应信息给客户端了，无需记录栈踪 */
+                /** 但是其他异常属于服务器内部异常，需要记录 */
+                LOG.info(Thread.currentThread().getName() + ": readAndProcess from client " +
+                                conn.getHostAddress() + "throw exception [" + e + "]",
+                        (e instanceof WrappedRpcServerException) ? null : e);
+                //为了关闭连接，将count设置为-1
+                count = -1;
+            }
+            if (count < 0){
+                closeConnection(conn);
+                conn = null;
+            }else {
+                conn.setLastContact(System.currentTimeMillis());
+            }
+        }
+
+        /**
          * 关闭当前连接
          *
          * @param key 当前连接的通道对应的SelectionKey对象
@@ -378,7 +489,7 @@ public abstract class Server {
                             key = iter.next();
                             iter.remove();
                             if (key.isValid() && key.isReadable()){
-                                doRead();
+                                doRead(key);
                             }
                             key = null;
                         }
@@ -441,6 +552,18 @@ public abstract class Server {
         private int remotePort;
         /** 网络连接正在处理的RPC请求数量 */
         private volatile int rpcCount;
+        /** 建立连接后发送的头信息中的第一个，即myrpc */
+        private ByteBuffer connectionHeaderHeaderBuf = null;
+        /** 建立连接后发送的头信息中的剩下的 */
+        private ByteBuffer connectionHeaderBuf = null;
+        /** 四字节长度 */
+        private ByteBuffer dataLengthBuffer = null;
+        /** 存放数据的缓冲区 */
+        private ByteBuffer data = null;
+        /** 连接头是否被读过 */
+        private boolean connectionHeaderRead = false;
+        /** 连接头后的连接上下文是否被读过 */
+        private boolean connectionContextRead = false;
 
         Connection(SocketChannel channel, long lastContact){
             this.channel = channel;
@@ -449,6 +572,7 @@ public abstract class Server {
             this.remoteAddr = socket.getInetAddress();
             this.hostAddress = remoteAddr.getHostAddress();
             this.remotePort = socket.getPort();
+            this.dataLengthBuffer = ByteBuffer.allocate(5);
         }
 
         private void setLastContact(long lastContact){
@@ -484,10 +608,126 @@ public abstract class Server {
 
         }
 
-        void doRead(SelectionKey key) throws InterruptedException{
-
+        public String getHostAddress(){
+            return hostAddress;
         }
 
+        int readAndProcess() throws IOException, InterruptedException{
+            while (true){
+                //至少读一次RPC的数据
+                //一直迭代直到一次RPC的数据读完或者没有剩余的数据
+                int count = -1;
+                /** 读取连接连接时的请求头 */
+                if (!connectionHeaderRead){
+                    /** 读取myrpc，具体信息参见{@link Client.Connection#writeConnectionHeader(OutputStream)} */
+                    if (connectionHeaderHeaderBuf.remaining() > 0){
+                        count = channelRead(channel, connectionHeaderHeaderBuf);
+                        if (count < 0 || connectionHeaderHeaderBuf.remaining() > 0){
+                            //读取有问题或者未读完，直接返回
+                            return count;
+                        }
+                    }
+                    /** 读取建立连接时的请求头剩余信息，具体信息参见{@link Client.Connection#writeConnectionHeader(OutputStream)} */
+                    if (connectionHeaderBuf == null){
+                        connectionHeaderBuf = ByteBuffer.allocate(2);
+                    }
+                    count = channelRead(channel, connectionHeaderBuf);
+                    if (count < 0 || connectionHeaderBuf.remaining() > 0){
+                        return count;
+                    }
+                    /** 这里只取serviceClass，因为AuthProtocol还未使用 */
+                    int serviceClass = connectionHeaderBuf.get(0);
+
+                    /** 对建立连接的头信息进行有效性检查 */
+                    connectionHeaderHeaderBuf.flip();
+                    if (!RPCConstants.HEADER.equals(connectionHeaderHeaderBuf)){
+                        LOG.warn("Incorrect header from" +
+                                hostAddress + ":" + remotePort);
+                        return -1;
+                    }
+
+                    connectionHeaderHeaderBuf.clear();
+                    connectionHeaderBuf = null;
+                    connectionHeaderRead = true;
+                    continue;
+                }
+
+                /** 读取数据长度 */
+                if (dataLengthBuffer.remaining() > 0){
+                    count = channelRead(channel, dataLengthBuffer);
+                    if (count < 0 || dataLengthBuffer.remaining() > 0){
+                        //读取有问题或者未读完
+                        return count;
+                    }
+                }
+
+                /** 读取数据 */
+                if (data == null){
+                    dataLengthBuffer.flip();
+                    int dataLength = dataLengthBuffer.getInt();
+                    checkDataLength(dataLength);
+                    data = ByteBuffer.allocate(dataLength);
+                }
+
+                count = channelRead(channel, data);
+                if (data.remaining() == 0){
+                    //说明数据已经完全读入
+                    dataLengthBuffer.clear();
+                    data.flip();
+                    /** processOneRpc方法可能改变connectionContextRead值 */
+                    boolean isHeaderRead = connectionContextRead;
+                    processOneRpc(data.array());
+                    data = null;
+                    if (!isHeaderRead){
+                        continue;
+                    }
+                }
+                return count;
+            }
+        }
+
+        /**
+         * 检验dataLength大小，防止太大导致分配内存过大而影响服务端运行
+         *
+         * @param dataLength 长度
+         * @throws IOException
+         */
+        private void checkDataLength(int dataLength) throws IOException{
+            if (dataLength < 0){
+                String errMsg = "Unexpected data length " + dataLength + "! from " + hostAddress;
+                LOG.warn(errMsg);
+                throw new IOException(errMsg);
+            }
+            if (dataLength > maxDataLength){
+                String errMsg = "Requested data length " + dataLength + "is longer than maximum configured RPC length " + maxDataLength + ". RPC came from " + hostAddress;
+                LOG.warn(errMsg);
+                throw new IOException(errMsg);
+            }
+        }
+
+    }
+
+    public static class WrappedRpcServerException extends RpcServerException{
+        private RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto errorCode;
+
+        public WrappedRpcServerException(RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto errorCode, IOException ioe){
+            super(ioe.toString(), ioe);
+            this.errorCode = errorCode;
+        }
+
+        public WrappedRpcServerException(RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto errorCode, String message){
+            this(errorCode, new RpcServerException(message));
+        }
+
+        @Override
+        public RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto getRpcErrorCodeProto(){
+            return errorCode;
+        }
+
+        @Override
+        public String toString(){
+            return getCause().toString();
+        }
     }
 
     private class ConnectionManager{

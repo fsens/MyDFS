@@ -10,8 +10,8 @@ public class RPCConstants {
     /** 客户端和名字节点的协议 */
     public static final String CLIENT_NAMENODE_PROTOCOL_NAME = "org.DFSdemo.protocol.ClientProtocol";
 
-    /** RPC连接发送header的头信息,cnrpc(client namenode rpc) */
-    public static final ByteBuffer HEADER = ByteBuffer.wrap("cnrpc".getBytes());
+    /** RPC连接发送header的头信息,myrpc(mydfs rpc) */
+    public static final ByteBuffer HEADER = ByteBuffer.wrap("myrpc".getBytes());
 
     /** 定义重试次数为-1，即不启用重试机制 */
 
