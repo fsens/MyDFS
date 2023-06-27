@@ -1,17 +1,18 @@
 package org.DFSdemo.ipc;
 
+import com.google.protobuf.Message;
 import org.DFSdemo.conf.CommonConfigurationKeysPublic;
 import org.DFSdemo.conf.Configuration;
 import org.DFSdemo.io.Writable;
+import org.DFSdemo.ipc.protobuf.IpcConnectionContextProtos;
 import org.DFSdemo.ipc.protobuf.RpcHeaderProtos;
 import org.DFSdemo.protocol.RPCConstants;
 import org.DFSdemo.util.ProtoUtil;
+import org.DFSdemo.util.ReflectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.Reader;
+import java.io.*;
 import java.net.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
@@ -539,6 +540,10 @@ public abstract class Server {
      */
     private class Responder extends Thread{
 
+        void doResponse(Call call) throws IOException{
+
+        }
+
     }
 
     private class Connection{
@@ -553,17 +558,21 @@ public abstract class Server {
         /** 网络连接正在处理的RPC请求数量 */
         private volatile int rpcCount;
         /** 建立连接后发送的头信息中的第一个，即myrpc */
-        private ByteBuffer connectionHeaderHeaderBuf = null;
+        private ByteBuffer connectionHeaderHeaderBuf;
         /** 建立连接后发送的头信息中的剩下的 */
-        private ByteBuffer connectionHeaderBuf = null;
+        private ByteBuffer connectionHeaderBuf;
         /** 四字节长度 */
-        private ByteBuffer dataLengthBuffer = null;
+        private ByteBuffer dataLengthBuffer;
         /** 存放数据的缓冲区 */
-        private ByteBuffer data = null;
+        private ByteBuffer data;
         /** 连接头是否被读过 */
         private boolean connectionHeaderRead = false;
         /** 连接头后的连接上下文是否被读过 */
         private boolean connectionContextRead = false;
+        /** 连接上下文对象 */
+        IpcConnectionContextProtos.IpcConnectionContextProto connectionContext;
+        /** 连接上下文对象中的协议名属性 */
+        String protocolName;
 
         Connection(SocketChannel channel, long lastContact){
             this.channel = channel;
@@ -572,7 +581,8 @@ public abstract class Server {
             this.remoteAddr = socket.getInetAddress();
             this.hostAddress = remoteAddr.getHostAddress();
             this.remotePort = socket.getPort();
-            this.dataLengthBuffer = ByteBuffer.allocate(5);
+            this.connectionHeaderHeaderBuf = ByteBuffer.allocate(5);
+            this.dataLengthBuffer = ByteBuffer.allocate(4);
         }
 
         private void setLastContact(long lastContact){
@@ -676,6 +686,7 @@ public abstract class Server {
                     data.flip();
                     /** processOneRpc方法可能改变connectionContextRead值 */
                     boolean isHeaderRead = connectionContextRead;
+                    /** 解析一次RPC：这一次RPC可能是连接上下文，也可能是一个客户端请求调用 */
                     processOneRpc(data.array());
                     data = null;
                     if (!isHeaderRead){
@@ -705,6 +716,186 @@ public abstract class Server {
             }
         }
 
+        /**
+         * 从输入流中反序列化protobuf对象
+         *
+         * @param builder 反序列化的目标protobuf类的构造器类
+         * @param dis 需要反序列化的输入流
+         * @return 反序列化后的protobuf类
+         * @param <T>
+         * @throws WrappedRpcServerException
+         */
+        @SuppressWarnings("unchecked")
+        private <T extends Message> T decodeProtobufFromStream(Message.Builder builder, DataInputStream dis) throws WrappedRpcServerException{
+            try {
+                builder.mergeDelimitedFrom(dis);
+                return (T) builder.build();
+            }catch (Exception e){
+                Class<?> protoClass = builder.getDefaultInstanceForType().getClass();
+                throw new WrappedRpcServerException(RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto.FATAL_DESERIALIZING_REQUEST,
+                        "Error decoding " + protoClass.getSimpleName() + ": " + e);
+            }
+        }
+
+        /**
+         * 处理一次RPC请求
+         *
+         * @param buf RPC请求对应的字节数组
+         * @throws IOException
+         * @throws InterruptedException
+         */
+        private void processOneRpc(byte[] buf) throws IOException, InterruptedException{
+            int callId = -1;
+            int retry = RPCConstants.INVALID_RETRY_COUNT;
+
+            try {
+                DataInputStream dis = new DataInputStream(new ByteArrayInputStream(buf));
+                RpcHeaderProtos.RpcRequestHeaderProto header = decodeProtobufFromStream(RpcHeaderProtos.RpcRequestHeaderProto.newBuilder(), dis);
+                callId = header.getCallId();
+                retry = header.getRetryCount();
+                if (LOG.isDebugEnabled()){
+                    LOG.debug("get #" + callId);
+                }
+                checkRpcHeader(header);
+                if (callId < 0){
+                    processOutOfBandRequest(header, dis);
+                }else if (!connectionContextRead){
+                    throw new WrappedRpcServerException(
+                            RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto.FATAL_INVALID_RPC_HEADER,
+                            "Connection context not found");
+                }else {
+                    processRpcRequest(header, dis);
+                }
+            }catch (WrappedRpcServerException wrse){
+                Throwable ioe = wrse.getCause();
+                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                Call call = new Call(callId, retry, null, this);
+                setupResponse(buffer, call, RpcHeaderProtos.RpcResponseHeaderProto.RpcStatusProto.FATAL,wrse.getRpcErrorCodeProto(),
+                        null, ioe.getClass().getName(), ioe.getMessage());
+                responder.doResponse(call);
+                throw wrse;
+            }
+        }
+
+        /**
+         * 验证rpc header是否正确
+         *
+         * @param header RPC request header
+         * @throws WrappedRpcServerException header包含无效值
+         */
+        private void checkRpcHeader(RpcHeaderProtos.RpcRequestHeaderProto header) throws WrappedRpcServerException{
+            if (!header.hasRpcKind()){
+                String errMsg = "IPC Server: No rpc kind in rpcRequestHeader";
+                throw new WrappedRpcServerException(RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto.FATAL_INVALID_RPC_HEADER, errMsg);
+            }
+        }
+
+        /**
+         * 解析客户端调用请求
+         *
+         * @param header RpcRequestHeaderProto对象，提供了一些头信息
+         * @param dis 客户端请求数据输入流
+         * @throws WrappedRpcServerException
+         * @throws InterruptedException
+         */
+        private void processRpcRequest(RpcHeaderProtos.RpcRequestHeaderProto header, DataInputStream dis) throws WrappedRpcServerException, InterruptedException{
+            /** 根据RPC类型获得调用请求类的封装类 */
+            Class<? extends Writable> rpcRequestClass = getRpcRequestWrapper(header.getRpcKind());
+            if (rpcRequestClass == null){
+                LOG.warn("Unknown RPC kind" + header.getRpcKind() +
+                        " from client " + hostAddress);
+                final String err = "Unknown rpc kind in rpc header " + header.getRpcKind();
+                throw new WrappedRpcServerException(
+                        RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto.FATAL_INVALID_RPC_HEADER,
+                        err);
+            }
+            Writable rpcRequest;
+            try {
+                /** 实例化对象rpcRequest */
+                rpcRequest = ReflectionUtils.newInstance(rpcRequestClass);
+                /** 反序列化rpcRequest对象 */
+                rpcRequest.readFields(dis);
+            }catch (Exception e){
+                LOG.warn("Unable to read call parameters for client " +
+                        hostAddress + "on connection protocol " +
+                        this.protocolName + "for rpcKind " + header.getRpcKind(), e);
+                String err = "IPC Server unable to read call parameters: " + e.getMessage();
+                throw new WrappedRpcServerException(
+                        RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto.FATAL_DESERIALIZING_REQUEST, err);
+            }
+            /** 构造RPC调用单元的Call对象，将其写入callQueue队列中 */
+            Call call = new Call(header.getCallId(), , header.getRetryCount(), rpcRequest, this, ProtoUtil.convertRpcKind(header.getRpcKind()), header.getClientId().toByteArray());
+            /** 将call入队，有可能在这里阻塞 */
+            callQueue.put(call);
+            incRpcCount();
+        }
+
+        Class<? extends Writable> getRpcRequestWrapper(RpcHeaderProtos.RpcKindPtoto rpcKind){
+            RpcKindMapValue val = rpcKindMap.get(ProtoUtil.convertRpcKind(rpcKind));
+            return (val == null) ? null : val.rpcRequestWrapperClass;
+        }
+
+        /**
+         * 处理out of band数据
+         *
+         * 这里不直接处理连接上下文的原因是，以后可能会添加其他的out of band数据
+         *
+         * @param header RPC header
+         * @param dis 请求的数据流
+         * @throws WrappedRpcServerException 状态错误
+         */
+        private void processOutOfBandRequest(RpcHeaderProtos.RpcRequestHeaderProto header,
+                                             DataInputStream dis) throws WrappedRpcServerException{
+            int callId = header.getCallId();
+            /** 根据callId判断是否是连接上下文 */
+            if (callId == RPCConstants.CONNECTION_CONTEXT_CALL_ID){
+                processConnectionContext(dis);
+            }else {
+                throw new WrappedRpcServerException(
+                        RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto.FATAL_INVALID_RPC_HEADER,
+                        "Unknown out of band call #" + callId);
+
+            }
+        }
+
+        /**
+         * 读取连接上下文（connection context）信息
+         *
+         * @param dis 客户端请求的数据输入流
+         * @throws WrappedRpcServerException 状态错误
+         */
+        private void processConnectionContext(DataInputStream dis) throws WrappedRpcServerException{
+            if (connectionContextRead){
+                throw new WrappedRpcServerException(
+                        RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto.FATAL_INVALID_RPC_HEADER,
+                        "Connection context already processed");
+            }
+            connectionContext = decodeProtobufFromStream(IpcConnectionContextProtos.IpcConnectionContextProto.newBuilder(), dis);
+            protocolName = connectionContext.getProtocol();
+            connectionContextRead = true;
+        }
+
+        /**
+         * 构造服务端响应信息，并赋值给Call对象
+         *
+         * @param responseBuf 序列化响应信息的buffer
+         * @param call {@link Call}对象
+         * @param status 调用状态
+         * @param errorCode 调用错误码
+         * @param resValue 如果调用成功，代表调用的返回值。如果调用失败则为null
+         * @param errorClass error class
+         * @param error 调用错误的堆栈信息
+         */
+        private void setupResponse(ByteArrayOutputStream responseBuf,
+                                   Call call, RpcHeaderProtos.RpcResponseHeaderProto.RpcStatusProto status, RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto errorCode,
+                                   Writable resValue, String errorClass, String error){
+
+        }
+
+        @Override
+        public String toString(){
+            return getHostAddress() + ":" + remotePort;
+        }
     }
 
     public static class WrappedRpcServerException extends RpcServerException{
