@@ -824,7 +824,7 @@ public abstract class Server {
                         RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto.FATAL_DESERIALIZING_REQUEST, err);
             }
             /** 构造RPC调用单元的Call对象，将其写入callQueue队列中 */
-            Call call = new Call(header.getCallId(), , header.getRetryCount(), rpcRequest, this, ProtoUtil.convertRpcKind(header.getRpcKind()), header.getClientId().toByteArray());
+            Call call = new Call(header.getCallId() , header.getRetryCount(), rpcRequest, this, ProtoUtil.convertRpcKind(header.getRpcKind()), header.getClientId().toByteArray());
             /** 将call入队，有可能在这里阻塞 */
             callQueue.put(call);
             incRpcCount();
