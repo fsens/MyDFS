@@ -1,5 +1,8 @@
 package org.DFSdemo.util;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
+
 public class StringUtils {
     /**
      * 将byte数组转成16进制字符串
@@ -23,5 +26,19 @@ public class StringUtils {
 
     public static String byteToHexString(byte[] bytes){
         return byteToHexString(bytes, 0, bytes.length);
+    }
+
+    /**
+     * 将异常堆栈信息转为字符串
+     *
+     * @param e 异常对象
+     * @return 字符串化的异常堆栈信息
+     */
+    public static String stringifyException(Throwable e){
+        StringWriter sw = new StringWriter();
+        PrintWriter printWriter = new PrintWriter(sw);
+        e.printStackTrace(printWriter);
+        printWriter.close();
+        return sw.toString();
     }
 }

@@ -9,6 +9,7 @@ import org.DFSdemo.ipc.protobuf.RpcHeaderProtos;
 import org.DFSdemo.protocol.RPCConstants;
 import org.DFSdemo.util.ProtoUtil;
 import org.DFSdemo.util.ReflectionUtils;
+import org.DFSdemo.util.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -556,6 +557,70 @@ public abstract class Server {
         Handler(int instanceNumber){
             this.setDaemon(true);
             this.setName("IPC Server handler" + instanceNumber + "on" + port);
+        }
+
+        @Override
+        public void run(){
+            LOG.debug(Thread.currentThread().getName() + ": starting.");
+            ByteArrayOutputStream buf = new ByteArrayOutputStream(10240);
+            while (running){
+                try {
+                    /** 线程安全的队列 */
+                    final Call call = callQueue.take();
+                    if (LOG.isDebugEnabled()){
+                        LOG.debug(Thread.currentThread().getName() + ":" + call +
+                                "for rpcKind " + call.rpcKind);
+                    }
+                    if (!call.connection.channel.isOpen()){
+                        LOG.info(Thread.currentThread().getName() + ": skipped " + call);
+                        continue;
+                    }
+                    /** 异常类 */
+                    String errorClass = null;
+                    /** 发生异常的堆栈信息 */
+                    String error = null;
+                    /** 返回状态 */
+                    RpcHeaderProtos.RpcResponseHeaderProto.RpcStatusProto returnStatus = null;
+                    /** 错误类型 */
+                    RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto detailedErr = null;
+                    Writable value = null;
+
+                    try {
+                        value = call(call.rpcKind, call.connection.protocolName, call.rpcRequest, call.timestamp);
+                    }catch (Throwable e){
+                        String logMsg = Thread.currentThread().getName() + ",call" + call;
+                        if (e instanceof RuntimeException || e instanceof Error){
+                            /** 抛出该类型的错误说明服务端自身出现问题 */
+                            LOG.warn(logMsg, e);
+                        }else {
+                            /** 属于正常情况的异常抛出 */
+                            LOG.info(logMsg, e);
+                        }
+                        if (e instanceof RpcServerException){
+                            RpcServerException rse = (RpcServerException) e;
+                            returnStatus = ((RpcServerException) e).getRpcStatusProto();
+                            detailedErr = rse.getRpcErrorCodeProto();
+                        }else {
+                            returnStatus = RpcHeaderProtos.RpcResponseHeaderProto.RpcStatusProto.ERROR;
+                            detailedErr = RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto.ERROR_APPLICATION;
+                        }
+                        errorClass = e.getClass().getName();
+                        error = StringUtils.stringifyException(e);
+                    }
+                    setupResponse(buf, call, returnStatus, detailedErr, value, errorClass, error);
+                    /** 如果buf占用空间太大则丢弃，重新将buf调到初始大小以释放内存。则是由于可能会存在大部分响应很小，其中一个响应很大的情况 */
+                    if (buf.size() > maxRespSize){
+                        LOG.info("Large response size " + buf.size() + "for call "
+                        + call.toString());
+                        buf = new ByteArrayOutputStream(10240);
+                    }
+                    responder.doResponse(call);
+                }catch (InterruptedException e){
+                    LOG.info(Thread.currentThread().getName() + "unexpectedly interrupted", e);
+                }catch (Exception e){
+                    LOG.info(Thread.currentThread().getName() + "caught an exception", e);
+                }
+            }
         }
     }
 
