@@ -138,6 +138,10 @@ public abstract class Server {
         return (nBytes > 0) ? nBytes : ret;
     }
 
+    private void closeConnection(Connection conn){
+        connectionManager.close(conn);
+    }
+
     /**
      * Server类的构造方法
      *
@@ -635,6 +639,8 @@ public abstract class Server {
         private int pending;
 
         final static int PURGE_INTERVAL = 90000;//15min
+        /** 收集到的所有的call对象，方便清理超时未响应的连接 */
+        ArrayList<Call> calls = null;
 
         Responder() throws IOException{
             this.setName("IPC Server Responder");
@@ -659,28 +665,83 @@ public abstract class Server {
         }
 
         private void doRunLoop(){
-            try {
-                /** 如果有渠道正在注册，则等待 */
-                waitPending();
-                writeSelector.select(PURGE_INTERVAL);
-                Iterator<SelectionKey> iter = writeSelector.selectedKeys().iterator();
-                while (iter.hasNext()){
-                    SelectionKey key = iter.next();
-                    iter.remove();
-                    try {
-                        if (key.isValid() && key.isWritable()){
-                            doAsyncWrite(key);
+            long lastPurgeTime = 0;
+            while (running){
+                try {
+                    /** 如果有渠道正在注册，则等待 */
+                    waitPending();
+                    writeSelector.select(PURGE_INTERVAL);
+                    Iterator<SelectionKey> iter = writeSelector.selectedKeys().iterator();
+                    while (iter.hasNext()){
+                        SelectionKey key = iter.next();
+                        iter.remove();
+                        try {
+                            if (key.isValid() && key.isWritable()){
+                                doAsyncWrite(key);
+                            }
+                        }catch (IOException ioe){
+                            LOG.info(Thread.currentThread().getName() + ": doAsyncWrite threw exception " + ioe);
                         }
-                    }catch (IOException ioe){
-                        LOG.info(Thread.currentThread().getName() + ": doAsyncWrite threw exception " + ioe);
+                    }
+
+                    long now = System.currentTimeMillis();
+                    if (now < lastPurgeTime + PURGE_INTERVAL){
+                        continue;
+                    }
+                    lastPurgeTime = now;
+
+                    if (LOG.isDebugEnabled()){
+                        LOG.debug("Checking for call responses.");
+                    }
+                    ArrayList<Call> calls = null;
+
+                    /** 收集所有等待被发送的响应Call对象 */
+                    synchronized (writeSelector.keys()){
+                        /** 锁住writeSelector.keys()对象，防止新的channel注册 */
+                        calls = new ArrayList<>(writeSelector.keys().size());
+                        iter = writeSelector.keys().iterator();
+                        while (iter.hasNext()){
+                            SelectionKey key = iter.next();
+                            Call call = (Call) key.attachment();
+                            if (call != null && key.channel() == call.connection.channel){
+                                calls.add(call);
+                            }
+                        }
+                    }
+
+                    /** 如果有长时间（超过PURGE_INTERVAL）未发送的calls，关闭连接，丢弃它们 */
+                    for (Call call : calls){
+                        doPurge(call, now);
+                    }
+                }catch (OutOfMemoryError e){
+                    //如果太多事件需要响应，可能会内存溢出
+                    LOG.warn("Out of Memory in server select" ,e);
+                    try{Thread.sleep(60000);} catch (Exception ie){}
+                }catch (Exception e){
+                    LOG.warn("Exception in Responder", e);
+                }
+            }
+
+        }
+
+        /**
+         * 清理传入call所在连接的responseQueue队列
+         * 如果存在超过PURGE_INTERVAL还未响应的call，说明它所在的连接很可能有问题，则关闭它所在的连接
+         *
+         * @param call
+         * @param now
+         */
+        private void doPurge(Call call, long now){
+            LinkedList<Call> responseQueue = call.connection.responseQueue;
+            synchronized (responseQueue){
+                ListIterator<Call> iter = responseQueue.listIterator(0);
+                while (iter.hasNext()){
+                    call = iter.next();
+                    if (now > call.timestamp + PURGE_INTERVAL){
+                        closeConnection(call.connection);
+                        break;
                     }
                 }
-            }catch (OutOfMemoryError e){
-                //如果太多事件需要响应，可能会内存溢出
-                LOG.warn("Out of Memory in server select" ,e);
-                try{Thread.sleep(60000);} catch (Exception ie){}
-            }catch (Exception e){
-                LOG.warn("Exception in Responder", e);
             }
         }
 
