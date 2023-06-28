@@ -660,6 +660,8 @@ public abstract class Server {
 
         private void doRunLoop(){
             try {
+                /** 如果有渠道正在注册，则等待 */
+                waitPending();
                 writeSelector.select(PURGE_INTERVAL);
                 Iterator<SelectionKey> iter = writeSelector.selectedKeys().iterator();
                 while (iter.hasNext()){
@@ -667,7 +669,7 @@ public abstract class Server {
                     iter.remove();
                     try {
                         if (key.isValid() && key.isWritable()){
-                            doAsynWrite(key);
+                            doAsyncWrite(key);
                         }
                     }catch (IOException ioe){
                         LOG.info(Thread.currentThread().getName() + ": doAsyncWrite threw exception " + ioe);
@@ -683,7 +685,141 @@ public abstract class Server {
         }
 
         void doResponse(Call call) throws IOException{
+            synchronized (call.connection.responseQueue){
+                call.connection.responseQueue.addLast(call);
+                /**
+                 * 如果队列只有当前的响应信息，直接写响应信息
+                 * 否则，只写入队列，Handler线程不做响应信息的发送
+                 *
+                 * 由于是先入队列，所以这里判断是否等于1
+                 */
+                if (call.connection.responseQueue.size() == 1){
+                    processResponse(call.connection.responseQueue, true);
+                }
+            }
+        }
 
+        private void doAsyncWrite(SelectionKey key) throws IOException{
+            Call call = (Call) key.attachment();
+            if (call == null){
+                return;
+            }
+            if (call.connection.channel != key.channel()){
+                throw new IOException("doAsyncWrite: bad channel");
+            }
+            synchronized (call.connection.responseQueue){
+                if (processResponse(call.connection.responseQueue, false)){
+                    try {
+                        /** 取消通道上的注册事件 */
+                        key.interestOps(0);
+                    }catch (CancelledKeyException e){
+                        LOG.warn("Exception while changing ops : " + e);
+                    }
+                }
+            }
+        }
+
+        /**
+         *  doResponse 和 doAsyncWrite的公共方法
+         *
+         * @param responseQueue Call对象队列
+         * @param isHandler 是否是Handler或者Reader线程发送响应的标志：是则true，反之则false
+         * @return 如果队列中响应已经发送完后者无需再发送响应（错误的情况），则返回ture；队列响应未发完则为false
+         * @throws IOException
+         */
+        private boolean processResponse(LinkedList<Call> responseQueue, boolean isHandler) throws IOException{
+
+            /** error默认为true，后面只要不修改为false，就说明出错了，要进行错误处理 */
+            boolean error = true;
+            boolean done = false;
+            int numElements = 0;
+            Call call = null;
+
+            try {
+                numElements = responseQueue.size();
+                if (numElements == 0){
+                    error = false;
+                    return true;
+                }
+                /** 取出第一个Call对象，发送响应信息 */
+                call = responseQueue.removeFirst();
+                SocketChannel channel = call.connection.channel;
+                if (LOG.isDebugEnabled()){
+                    LOG.debug(Thread.currentThread().getName() + ": responding to" + call);
+                }
+                /** 将响应信息发送到channel */
+                int numBytes = channelWrite(channel, call.response);
+                if (numBytes < 0){
+                    return true;
+                }
+
+                /** 如果响应一次性发送完 */
+                if (!call.response.hasRemaining()){
+                    call.response = null;
+                    call.connection.decRpcCount();
+                    /** 由于responseQueue.removeFirst()并不会改变numElements，所以当numElements为1时就说明已经处理完call队列中的call了 */
+                    if (numElements == 1){
+                        done = true;
+                    }else {
+                        done = false;
+                    }
+                    if (LOG.isDebugEnabled()){
+                        LOG.debug(Thread.currentThread().getName() + " responding to" + call
+                        + "Wrote " + numBytes + "bytes.");
+                    }
+                }else {
+                    /** 说明没有一次性读取完，继续放入队列中 */
+                    call.connection.responseQueue.addFirst(call);
+
+                    /**
+                     * 如果isHandler = true，说明该队列只有当前处理的一个Call对象
+                     * 如果本次未处理完，需要重新放入队列给该渠道注册一个OP_WRITE事件，后续由Responder线程继续处理
+                     */
+                    if (isHandler){
+                        call.timestamp = System.currentTimeMillis();
+
+                        /** 防止wakeup后register前再次进入select等待，需要加锁，让responder线程等待 */
+                        incPending();
+                        try {
+                            /** 如果writeSelector再select上阻塞，无法成功地register */
+                            writeSelector.wakeup();
+                            channel.register(writeSelector, SelectionKey.OP_WRITE, call);
+                        }catch (ClosedChannelException e){
+                            done = true;
+                        }finally {
+                            decPending();
+                        }
+                    }
+                    if (LOG.isDebugEnabled()){
+                        LOG.debug(Thread.currentThread().getName() + "responding to " + call
+                                + "Wrote partial " + numBytes + "bytes.");
+                    }
+                }
+                error = false;
+            }finally {
+                if (error && call != null){
+                    LOG.warn(Thread.currentThread().getName() + ",call " + call + ": output error");
+                    done = true;
+                    /** 关闭连接 */
+                    closeConnection(call.connection);
+                }
+            }
+            return true;
+        }
+
+        private synchronized void incPending(){
+            pending++;
+        }
+
+        private synchronized void decPending(){
+            pending--;
+            notify();
+        }
+
+        private synchronized void waitPending() throws InterruptedException{
+            while (pending > 0){
+                wait();
+            }
         }
 
     }
@@ -780,6 +916,8 @@ public abstract class Server {
         IpcConnectionContextProtos.IpcConnectionContextProto connectionContext;
         /** 连接上下文对象中的协议名属性 */
         String protocolName;
+        /** 存放响应的call队列 */
+        private final LinkedList<Call> responseQueue;
 
         Connection(SocketChannel channel, long lastContact){
             this.channel = channel;
@@ -790,6 +928,7 @@ public abstract class Server {
             this.remotePort = socket.getPort();
             this.connectionHeaderHeaderBuf = ByteBuffer.allocate(5);
             this.dataLengthBuffer = ByteBuffer.allocate(4);
+            this.responseQueue = new LinkedList<Call>();
         }
 
         private void setLastContact(long lastContact){
