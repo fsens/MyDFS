@@ -1,6 +1,9 @@
 package org.DFSdemo.server.namenode;
 
 import java.util.HashMap;
+import org.DFSdemo.server.datanode.HeartbeatManager;
+import org.DFSdemo.server.datanode.HeartbeatMonitor;
+import org.DFSdemo.server.datanode.HeartbeatReceiver;
 
 public class FSDirectory {
     //单例设计模式
@@ -8,6 +11,9 @@ public class FSDirectory {
     INodeDirectory root;
     HashMap<Long, INode> INodeMap;   //存储id与inode的映射关系
     INodeDirectory currentDirectory;
+    HeartbeatReceiver hbReceiver;
+    HeartbeatManager hbManager;
+    HeartbeatMonitor hbMonitor;
 
     static final String DEFAULT_USER="admin";
     static final int DEFAULT_DIR_PERMISSION=100;
@@ -17,6 +23,9 @@ public class FSDirectory {
         root=new INodeDirectory(DEFAULT_USER, DEFAULT_DIR_PERMISSION);
         INodeMap=new HashMap<>();
         currentDirectory=root;
+        hbManager=new HeartbeatManager();
+        hbMonitor=new HeartbeatMonitor(hbManager);
+        hbReceiver=new HeartbeatReceiver(hbManager);
     }
     public static FSDirectory getInstance(){
         return fileSystem;
@@ -25,6 +34,14 @@ public class FSDirectory {
     String getINodeName(long id){
         INode inode=INodeMap.get(id);
         return inode.getName();
+    }
+
+    void receiveHeartbeat(String nodeId){
+        hbReceiver.receiveHeartbeat(nodeId);
+    }
+
+    boolean monitorHeartbeat(String nodeId, long threshold){
+        return hbMonitor.monitorHeartbeat(nodeId, threshold);
     }
 
     void setCurrentDirectory(INodeDirectory dir){

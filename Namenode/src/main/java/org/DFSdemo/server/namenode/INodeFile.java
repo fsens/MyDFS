@@ -1,6 +1,7 @@
 package org.DFSdemo.server.namenode;
 
 import java.util.Vector;
+import org.DFSdemo.server.datanode.BlockInfo;
 
 public class INodeFile extends INode{
     long header;
