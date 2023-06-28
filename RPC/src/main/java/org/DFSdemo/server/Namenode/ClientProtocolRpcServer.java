@@ -57,7 +57,7 @@ public class ClientProtocolRpcServer implements ClientProtocol {
         InetSocketAddress protoBufRpcServerAddr = Namenode.getProtoBufRpcServerAddress(conf);
         String bindHost= protoBufRpcServerAddr.getHostName();
         int bindPort = protoBufRpcServerAddr.getPort();
-        LOG.info("RPC server is binding to" + bindHost + ":" + bindPort);
+        LOG.info("RPC server is binding to " + bindHost + ":" + bindPort);
         /** 利用Build构造protoBufRpcServer对象 */
         this.protoBufRpcServer = new RPC.Builder(conf)
                 .setProtocol(ClientNamenodeProtocolPB.class)
@@ -83,6 +83,6 @@ public class ClientProtocolRpcServer implements ClientProtocol {
     @Override
     public boolean rename2(String src, String dst) throws IOException {
         //TODO:Namenode实现rename2
-        return false;
+        return true;
     }
 }

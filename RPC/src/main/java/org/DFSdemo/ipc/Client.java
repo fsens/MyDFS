@@ -502,6 +502,7 @@ public class Client {
 
         public Connection(ConnectionId remoteId, Integer serviceClass) throws IOException{
             this.remoteId = remoteId;
+            this.server = remoteId.getAddress();
             this.serviceClass = serviceClass;
             if ((server.isUnresolved())){
                 throw new UnknownHostException("Unknown host name:" + server.toString());

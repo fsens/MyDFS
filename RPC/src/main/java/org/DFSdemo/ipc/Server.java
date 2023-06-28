@@ -320,7 +320,7 @@ public abstract class Server {
                 reader.start();
             }
 
-            this.setName("IPC Server listener on" + port);
+            this.setName("IPC Server listener on " + port);
             /** 设置为daemon，它的线程也是daemon */
             this.setDaemon(true);
         }
@@ -562,7 +562,7 @@ public abstract class Server {
     private class Handler extends Thread{
         Handler(int instanceNumber){
             this.setDaemon(true);
-            this.setName("IPC Server handler" + instanceNumber + "on" + port);
+            this.setName("IPC Server handler " + instanceNumber + "on " + port);
         }
 
         @Override
@@ -586,7 +586,7 @@ public abstract class Server {
                     /** 发生异常的堆栈信息 */
                     String error = null;
                     /** 返回状态 */
-                    RpcHeaderProtos.RpcResponseHeaderProto.RpcStatusProto returnStatus = null;
+                    RpcHeaderProtos.RpcResponseHeaderProto.RpcStatusProto returnStatus = RpcHeaderProtos.RpcResponseHeaderProto.RpcStatusProto.SUCCESS;
                     /** 错误类型 */
                     RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto detailedErr = null;
                     Writable value = null;
@@ -594,7 +594,7 @@ public abstract class Server {
                     try {
                         value = call(call.rpcKind, call.connection.protocolName, call.rpcRequest, call.timestamp);
                     }catch (Throwable e){
-                        String logMsg = Thread.currentThread().getName() + ",call" + call;
+                        String logMsg = Thread.currentThread().getName() + ",call " + call;
                         if (e instanceof RuntimeException || e instanceof Error){
                             /** 抛出该类型的错误说明服务端自身出现问题 */
                             LOG.warn(logMsg, e);
@@ -1330,7 +1330,7 @@ public abstract class Server {
         final private int maxIdleToClose;
 
         ConnectionManager(){
-            this.idleScanTimer = new Timer("IPC Server idle connection scanner for port" + port, true);
+            this.idleScanTimer = new Timer("IPC Server idle connection scanner for port " + port, true);
             this.idleScanInterval = conf.getInt(
                     CommonConfigurationKeysPublic.IPC_CLIENT_CONNECTION_IDLESCANINTERVAL_KEY,
                     CommonConfigurationKeysPublic.IPC_CLIENT_CONNECTION_IDLESCANINTERVAL_DEFAULT);
