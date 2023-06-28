@@ -1,5 +1,7 @@
 package org.DFSdemo.ipc;
 
+import com.google.protobuf.ByteString;
+import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.Message;
 import org.DFSdemo.conf.CommonConfigurationKeysPublic;
 import org.DFSdemo.conf.Configuration;
@@ -629,10 +631,126 @@ public abstract class Server {
      */
     private class Responder extends Thread{
 
+        private final Selector writeSelector;
+        private int pending;
+
+        final static int PURGE_INTERVAL = 90000;//15min
+
+        Responder() throws IOException{
+            this.setName("IPC Server Responder");
+            this.setDaemon(true);
+            writeSelector = Selector.open();
+            pending = 0;
+        }
+
+        @Override
+        public void run(){
+            LOG.info(Thread.currentThread().getName() + ": starting.");
+            try {
+                doRunLoop();
+            }finally {
+                LOG.info("Stopping " + Thread.currentThread().getName());
+                try {
+                    writeSelector.close();
+                }catch (IOException ioe){
+                    LOG.error("Couldn't close write selector in " + Thread.currentThread().getName(), ioe);
+                }
+            }
+        }
+
+        private void doRunLoop(){
+            try {
+                writeSelector.select(PURGE_INTERVAL);
+                Iterator<SelectionKey> iter = writeSelector.selectedKeys().iterator();
+                while (iter.hasNext()){
+                    SelectionKey key = iter.next();
+                    iter.remove();
+                    try {
+                        if (key.isValid() && key.isWritable()){
+                            doAsynWrite(key);
+                        }
+                    }catch (IOException ioe){
+                        LOG.info(Thread.currentThread().getName() + ": doAsyncWrite threw exception " + ioe);
+                    }
+                }
+            }catch (OutOfMemoryError e){
+                //如果太多事件需要响应，可能会内存溢出
+                LOG.warn("Out of Memory in server select" ,e);
+                try{Thread.sleep(60000);} catch (Exception ie){}
+            }catch (Exception e){
+                LOG.warn("Exception in Responder", e);
+            }
+        }
+
         void doResponse(Call call) throws IOException{
 
         }
 
+    }
+
+    /**
+     * 构造服务端响应信息，并赋值给Call对象
+     *
+     * @param responseBuf 序列化响应信息的buffer
+     * @param call {@link Call}对象
+     * @param status 调用状态
+     * @param errorCode 调用错误码
+     * @param resValue 如果调用成功，代表调用的返回值。如果调用失败则为null
+     * @param errorClass error class
+     * @param error 调用错误的堆栈信息
+     */
+    private void setupResponse(ByteArrayOutputStream responseBuf,
+                               Call call, RpcHeaderProtos.RpcResponseHeaderProto.RpcStatusProto status, RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto errorCode,
+                               Writable resValue, String errorClass, String error) throws IOException{
+        //先清空缓冲区中的数据
+        responseBuf.reset();
+        DataOutputStream out = new DataOutputStream(responseBuf);
+        RpcHeaderProtos.RpcResponseHeaderProto.Builder headerBuilder = RpcHeaderProtos.RpcResponseHeaderProto.newBuilder();
+        headerBuilder.setClientId(ByteString.copyFrom(call.clientId));
+        headerBuilder.setCallId(call.callId);
+        headerBuilder.setRetryCount(call.retryCount);
+        headerBuilder.setStatus(status);
+
+        /** 如果客户端请求的调用成功完成 */
+        if (status == RpcHeaderProtos.RpcResponseHeaderProto.RpcStatusProto.SUCCESS){
+            RpcHeaderProtos.RpcResponseHeaderProto header = headerBuilder.build();
+            final int headerLen = header.getSerializedSize();
+            int fullLength = CodedOutputStream.computeUInt32SizeNoTag(headerLen) + headerLen;
+
+            try {
+                ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                DataOutputStream tmpOut = new DataOutputStream(bo);
+                /** 先将返回值写入临时输出流中(注意，这里是按照protobuf的方式写入的输出流) */
+                resValue.write(tmpOut);
+                byte[] data = bo.toByteArray();
+
+                fullLength += data.length;
+                /** 写入响应头和返回值的总长度 */
+                out.write(fullLength);
+                /** 再按照protobuf的方式将响应头序列化写入到输出流中 */
+                header.writeDelimitedTo(out);
+                /** 最后将返回值按照protobuf的方式序列化写入输出流 */
+                out.write(data);
+            }catch (Throwable t){
+                LOG.warn("Error serializing call response for call " + call, t);
+                /** 序列化出错时，需要递归调用该方法，创建一个序列化错误的响应信息 */
+                setupResponse(responseBuf, call, RpcHeaderProtos.RpcResponseHeaderProto.RpcStatusProto.ERROR,
+                        RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto.ERROR_SERIALIZING,
+                        null, t.getClass().getName(), StringUtils.stringifyException(t));
+            }
+        }else {
+            /** 如果客户端调用的请求完成失败，则设置失败信息，就不返回返回值了 */
+            headerBuilder.setErrorDetail(errorCode);
+            headerBuilder.setExceptionClassName(errorClass);
+            headerBuilder.setErrorMsg(error);
+            RpcHeaderProtos.RpcResponseHeaderProto header = headerBuilder.build();
+            int headerLen = header.getSerializedSize();
+            final int fullLength = CodedOutputStream.computeUInt32SizeNoTag(headerLen) + headerLen;
+            out.write(fullLength);
+            header.writeDelimitedTo(out);
+        }
+        /** 从输出流中获取序列化的字节数组，并设置到call中的response属性中 */
+        call.setResponse(ByteBuffer.wrap(responseBuf.toByteArray()));
     }
 
     private class Connection{
@@ -964,22 +1082,6 @@ public abstract class Server {
             connectionContextRead = true;
         }
 
-        /**
-         * 构造服务端响应信息，并赋值给Call对象
-         *
-         * @param responseBuf 序列化响应信息的buffer
-         * @param call {@link Call}对象
-         * @param status 调用状态
-         * @param errorCode 调用错误码
-         * @param resValue 如果调用成功，代表调用的返回值。如果调用失败则为null
-         * @param errorClass error class
-         * @param error 调用错误的堆栈信息
-         */
-        private void setupResponse(ByteArrayOutputStream responseBuf,
-                                   Call call, RpcHeaderProtos.RpcResponseHeaderProto.RpcStatusProto status, RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto errorCode,
-                                   Writable resValue, String errorClass, String error){
-
-        }
 
         @Override
         public String toString(){
