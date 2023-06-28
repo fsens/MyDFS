@@ -1,3 +1,5 @@
+package org.DFSdemo.server.namenode;
+
 import java.util.HashMap;
 import java.util.Map;
 

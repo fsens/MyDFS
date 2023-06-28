@@ -24,6 +24,10 @@ public class INodeDirectory extends INode{
         return Collections.binarySearch(children, child);
     }
 
+    ArrayList<INode> getChildren(){
+        return children;
+    }
+
     INode getChild(int index){
         return children.get(index);
     }

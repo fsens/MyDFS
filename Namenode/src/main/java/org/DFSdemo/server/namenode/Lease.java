@@ -1,10 +1,10 @@
-// Lease.java
+package org.DFSdemo.server.namenode;// Lease.java
 
 import java.util.Objects;
 
 public class Lease {
-    private String path;           // 文件路径
-    private String holder;         // 租约持有者
+    private final String path;           // 文件路径
+    private final String holder;         // 租约持有者
     private long expirationTime;   // 租约过期时间
 
     public Lease(String path, String holder, long expirationTime) {

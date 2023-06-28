@@ -46,30 +46,30 @@ public class FSDirectory {
         return currentDirectory.getFullPathName();
     }
 
-    INode search(String name){
-        //构造一个同名的临时inode用于搜索
-        INode inode=new INode(currentDirectory, DEFAULT_USER, DEFAULT_DIR_PERMISSION, name);
-        //保存当前目录
-        INodeDirectory currentDir=currentDirectory;
-        int i=currentDirectory.searchChild(inode);
-        if(i>0){
-            return currentDirectory.getChild(i);
-        }else{
-            if(currentDirectory.numOfChildren()>0){
-                for(INode child : currentDirectory.children){
-                    if(child.isDirectory()){
-                        //重设当前目录
-                        setCurrentDirectory((INodeDirectory) child);
-                        INode temp = search(name);
-                        //恢复当前目录
-                        setCurrentDirectory(currentDir);
-                        if(temp!=null) return temp;
-                    }
-                }
-            }
-        }
-        return null;
-    }
+//    INode search(String name){
+//        //构造一个同名的临时inode用于搜索
+//        INode inode=new INode(currentDirectory, DEFAULT_USER, DEFAULT_DIR_PERMISSION, name);
+//        //保存当前目录
+//        INodeDirectory currentDir=currentDirectory;
+//        int i=currentDirectory.searchChild(inode);
+//        if(i>0){
+//            return currentDirectory.getChild(i);
+//        }else{
+//            if(currentDirectory.numOfChildren()>0){
+//                for(INode child : currentDirectory.children){
+//                    if(child.isDirectory()){
+//                        //重设当前目录
+//                        setCurrentDirectory((INodeDirectory) child);
+//                        INode temp = search(name);
+//                        //恢复当前目录
+//                        setCurrentDirectory(currentDir);
+//                        if(temp!=null) return temp;
+//                    }
+//                }
+//            }
+//        }
+//        return null;
+//    }
 
     void setPermission(INode inode, int permission){
         inode.setPermission(permission);
