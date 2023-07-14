@@ -9,6 +9,8 @@ import org.apache.commons.logging.LogFactory;
 import javax.net.SocketFactory;
 import java.io.Closeable;
 import java.io.IOException;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Proxy;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -30,7 +32,7 @@ public class RPC {
 
 
     /**
-     * 停止代理，该代理需要实现{@link Closeable} 或者 {@link RpcInvocationHandler}
+     * 停止代理，该代理需要实现{@link Closeable} 或者 关联{@link RpcInvocationHandler}
      *
      * @param proxy 需要停止的代理
      *
@@ -47,16 +49,23 @@ public class RPC {
                 ((Closeable) proxy).close();
                 return;
             }
+            //判断代理对象的处理程序类是否实现了Closeable接口
+            InvocationHandler handler = Proxy.getInvocationHandler(proxy);
+            if (handler instanceof Closeable){
+                ((Closeable) handler).close();
+                return;
+            }
         }catch (IOException e){
             LOG.error("Closing proxy or invocation handler causer exception", e);
         }catch (IllegalArgumentException e){
             LOG.error("RPC.stopProxy called on non proxy: class=" + proxy.getClass().getName(), e);
         }
 
-        //proxy没有close方法
+//        System.out.println(proxy.getClass() + " is not instanceof Closeable!");
+        //proxy没有close方法或者没有实现Closeable接口
         throw new IllegalArgumentException(
                 "Cannot close proxy - is not Closeable or "
-                + "dose not provide Closeable invocation handler"
+                + "dose not provide Closeable invocation handler "
                 + proxy.getClass()
         );
     }

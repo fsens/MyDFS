@@ -34,6 +34,14 @@
       <scope>test</scope>
     </dependency>
 
+    <!--操作excel文件的-->
+    <!-- https://mvnrepository.com/artifact/org.apache.poi/poi-ooxml -->
+    <dependency>
+      <groupId>org.apache.poi</groupId>
+      <artifactId>poi-ooxml</artifactId>
+      <version>5.2.3</version>
+    </dependency>
+
     <!-- 日志框架，提供了一个简单的、一致的日志接口，和下面的log4j结合使用 -->
     <dependency>
       <groupId>commons-logging</groupId>
