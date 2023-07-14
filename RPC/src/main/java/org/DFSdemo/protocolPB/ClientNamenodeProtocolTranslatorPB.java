@@ -14,11 +14,11 @@ import java.io.IOException;
 public class ClientNamenodeProtocolTranslatorPB implements ClientProtocol, Closeable {
     private ClientNamenodeProtocolPB rpcProxy;
 
-    public ClientNamenodeProtocolTranslatorPB(ClientNamenodeProtocolPB proxy) {
-    }
+//    public ClientNamenodeProtocolTranslatorPB(ClientNamenodeProtocolPB proxy) {
+//    }
 
-    public void ClientNamenodeProtocolTranslatorPB(ClientNamenodeProtocolPB proxy){
-        this.rpcProxy=proxy;
+    public ClientNamenodeProtocolTranslatorPB(ClientNamenodeProtocolPB proxy){
+        this.rpcProxy = proxy;
     }
 
 //    public LocatedBlocks getBlockLocations(String src , long offset , long length){

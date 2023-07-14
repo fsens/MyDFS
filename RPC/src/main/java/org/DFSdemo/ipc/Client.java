@@ -21,10 +21,7 @@ import java.io.*;
 import java.lang.reflect.Constructor;
 import java.net.*;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
-import java.util.Hashtable;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -386,15 +383,15 @@ public class Client {
                 try {
                     Constructor<? extends Throwable> ctor = clazz.getConstructor(String.class);
                     String msg = "Call From " + InetAddress.getLocalHost()
-                            + "to" + address.getHostName() + ":" + address.getPort()
-                            + "failed on exception: " + call.error;
+                            + " to " + address.getHostName() + " : " + address.getPort()
+                            + " failed on exception: " + call.error;
                     Throwable t = ctor.newInstance(msg);
                     /** 将call.error指定为当前异常对象t的cause，然后抛出 */
                     t.initCause(call.error);
                     throw t;
                 }catch (Throwable e){
                     LOG.warn("Unable to construct exception of type " +
-                            clazz + ": it has no (String) constructor", e);
+                            clazz + " : it has no (String) constructor", e);
                     throw call.error;
                 }
             }
@@ -483,6 +480,8 @@ public class Client {
         /** socket连接超时的最大重试次数 */
         private final int maxRetriesOnSocketTimeouts;
         private int serviceClass;
+        /** 关闭的原因 */
+        private IOException closeException;
 
         /** 标识是否应该关闭连接，默认值：false */
         private AtomicBoolean shouldCloseConnection = new AtomicBoolean();
@@ -502,6 +501,7 @@ public class Client {
 
         public Connection(ConnectionId remoteId, Integer serviceClass) throws IOException{
             this.remoteId = remoteId;
+            this.server = remoteId.getAddress();
             this.serviceClass = serviceClass;
             if ((server.isUnresolved())){
                 throw new UnknownHostException("Unknown host name:" + server.toString());
@@ -561,7 +561,50 @@ public class Client {
          * 关闭连接
          */
         private synchronized void close(){
+            if (!shouldCloseConnection.get()){
+                LOG.error("The connection is not in the closed state.");
+                return;
+            }
 
+            //释放连接资源
+            synchronized (connections){
+                if (connections.get(remoteId) == this){
+                    connections.remove(remoteId);
+                }
+            }
+
+            //关闭输入输出流
+            IOUtils.closeStream(in);
+            IOUtils.closeStream(out);
+
+            if (closeException == null){
+                if (!calls.isEmpty()){
+                    LOG.warn("A ocnnection is closed for no cause and calls are not empty.");
+                    closeException = new IOException("Unexpected closed connection");
+                    cleanupCalls();
+                }
+            }else {
+                if (LOG.isDebugEnabled()){
+                    LOG.debug("closing ipc connection to " + server + ": " +
+                            closeException.getMessage(), closeException);
+                }
+                cleanupCalls();
+                if (LOG.isDebugEnabled()){
+                    LOG.debug(getName() + ":closed");
+                }
+            }
+        }
+
+        /**
+         * remove所有的call，并设置为本地异常
+         */
+        private void cleanupCalls(){
+            Iterator<Map.Entry<Integer, Call>> iter = calls.entrySet().iterator();
+            while (iter.hasNext()){
+                Call call = iter.next().getValue();
+                iter.remove();
+                call.setException(closeException);
+            }
         }
 
         /**
@@ -652,8 +695,16 @@ public class Client {
             lastActivity.set(System.currentTimeMillis());
         }
 
+        /**
+         * 标志网络连接状态为关闭
+         *
+         * @param e 关闭的原因
+         */
         private synchronized void markClosed(IOException e){
-
+            if (shouldCloseConnection.compareAndSet(false, true)){
+                closeException = e;
+                notifyAll();
+            }
         }
 
         /**

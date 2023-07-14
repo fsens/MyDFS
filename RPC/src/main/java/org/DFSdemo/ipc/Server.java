@@ -315,24 +315,24 @@ public abstract class Server {
             /** 创建reader线程并启动 */
             this.readers = new Reader[readThreads];
             for (int i = 0; i < readThreads; i++ ){
-                Reader reader = new Reader("Socket Reader #" + (i + 1) + "for port" + port);
+                Reader reader = new Reader("Socket Reader #" + (i + 1) + " for port " + port);
                 this.readers[i] = reader;
                 reader.start();
             }
 
-            this.setName("IPC Server listener on" + port);
+            this.setName("IPC Server listener on " + port);
             /** 设置为daemon，它的线程也是daemon */
             this.setDaemon(true);
         }
 
         @Override
         public void run(){
-            LOG.info("Listener thread" + Thread.currentThread().getName() + ": starting");
+            LOG.info("Listener thread " + Thread.currentThread().getName() + " : starting");
             connectionManager.startIdleScan();
             while (running){
                 SelectionKey key = null;
                 try {
-                    /** 阻塞等待，直到1.至少有一个通道准备好I/O操作或者2.被中断 */
+                    /** 阻塞等待，直到一下其中一个发生1.至少有一个通道准备好I/O操作或者2.被中断 */
                     selector.select();
                     Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
                     while (iterator.hasNext()){
@@ -562,7 +562,7 @@ public abstract class Server {
     private class Handler extends Thread{
         Handler(int instanceNumber){
             this.setDaemon(true);
-            this.setName("IPC Server handler" + instanceNumber + "on" + port);
+            this.setName("IPC Server handler " + instanceNumber + "on " + port);
         }
 
         @Override
@@ -574,11 +574,11 @@ public abstract class Server {
                     /** 线程安全的队列 */
                     final Call call = callQueue.take();
                     if (LOG.isDebugEnabled()){
-                        LOG.debug(Thread.currentThread().getName() + ":" + call +
-                                "for rpcKind " + call.rpcKind);
+                        LOG.debug(Thread.currentThread().getName() + " : " + call +
+                                " for rpcKind " + call.rpcKind);
                     }
                     if (!call.connection.channel.isOpen()){
-                        LOG.info(Thread.currentThread().getName() + ": skipped " + call);
+                        LOG.info(Thread.currentThread().getName() + " : skipped " + call);
                         continue;
                     }
                     /** 异常类 */
@@ -586,7 +586,7 @@ public abstract class Server {
                     /** 发生异常的堆栈信息 */
                     String error = null;
                     /** 返回状态 */
-                    RpcHeaderProtos.RpcResponseHeaderProto.RpcStatusProto returnStatus = null;
+                    RpcHeaderProtos.RpcResponseHeaderProto.RpcStatusProto returnStatus = RpcHeaderProtos.RpcResponseHeaderProto.RpcStatusProto.SUCCESS;
                     /** 错误类型 */
                     RpcHeaderProtos.RpcResponseHeaderProto.RpcErrorCodeProto detailedErr = null;
                     Writable value = null;
@@ -594,7 +594,7 @@ public abstract class Server {
                     try {
                         value = call(call.rpcKind, call.connection.protocolName, call.rpcRequest, call.timestamp);
                     }catch (Throwable e){
-                        String logMsg = Thread.currentThread().getName() + ",call" + call;
+                        String logMsg = Thread.currentThread().getName() + ",call " + call;
                         if (e instanceof RuntimeException || e instanceof Error){
                             /** 抛出该类型的错误说明服务端自身出现问题 */
                             LOG.warn(logMsg, e);
@@ -616,7 +616,7 @@ public abstract class Server {
                     setupResponse(buf, call, returnStatus, detailedErr, value, errorClass, error);
                     /** 如果buf占用空间太大则丢弃，重新将buf调到初始大小以释放内存。则是由于可能会存在大部分响应很小，其中一个响应很大的情况 */
                     if (buf.size() > maxRespSize){
-                        LOG.info("Large response size " + buf.size() + "for call "
+                        LOG.info("Large response size " + buf.size() + " for call "
                         + call.toString());
                         buf = new ByteArrayOutputStream(10240);
                     }
@@ -639,8 +639,6 @@ public abstract class Server {
         private int pending;
 
         final static int PURGE_INTERVAL = 90000;//15min
-        /** 收集到的所有的call对象，方便清理超时未响应的连接 */
-        ArrayList<Call> calls = null;
 
         Responder() throws IOException{
             this.setName("IPC Server Responder");
@@ -668,7 +666,7 @@ public abstract class Server {
             long lastPurgeTime = 0;
             while (running){
                 try {
-                    /** 如果有渠道正在注册，则等待 */
+                    /** 如果有管道正在注册，则等待 */
                     waitPending();
                     writeSelector.select(PURGE_INTERVAL);
                     Iterator<SelectionKey> iter = writeSelector.selectedKeys().iterator();
@@ -693,8 +691,8 @@ public abstract class Server {
                     if (LOG.isDebugEnabled()){
                         LOG.debug("Checking for call responses.");
                     }
-                    ArrayList<Call> calls = null;
 
+                    ArrayList<Call> calls = null;
                     /** 收集所有等待被发送的响应Call对象 */
                     synchronized (writeSelector.keys()){
                         /** 锁住writeSelector.keys()对象，防止新的channel注册 */
@@ -806,7 +804,7 @@ public abstract class Server {
                 call = responseQueue.removeFirst();
                 SocketChannel channel = call.connection.channel;
                 if (LOG.isDebugEnabled()){
-                    LOG.debug(Thread.currentThread().getName() + ": responding to" + call);
+                    LOG.debug(Thread.currentThread().getName() + ": responding to " + call);
                 }
                 /** 将响应信息发送到channel */
                 int numBytes = channelWrite(channel, call.response);
@@ -825,8 +823,8 @@ public abstract class Server {
                         done = false;
                     }
                     if (LOG.isDebugEnabled()){
-                        LOG.debug(Thread.currentThread().getName() + " responding to" + call
-                        + "Wrote " + numBytes + "bytes.");
+                        LOG.debug(Thread.currentThread().getName() + " responding to " + call
+                        + " Wrote " + numBytes + " bytes.");
                     }
                 }else {
                     /** 说明没有一次性读取完，继续放入队列中 */
@@ -842,7 +840,7 @@ public abstract class Server {
                         /** 防止wakeup后register前再次进入select等待，需要加锁，让responder线程等待 */
                         incPending();
                         try {
-                            /** 如果writeSelector再select上阻塞，无法成功地register */
+                            /** 如果writeSelector在select上阻塞，无法成功地register */
                             writeSelector.wakeup();
                             channel.register(writeSelector, SelectionKey.OP_WRITE, call);
                         }catch (ClosedChannelException e){
@@ -852,8 +850,8 @@ public abstract class Server {
                         }
                     }
                     if (LOG.isDebugEnabled()){
-                        LOG.debug(Thread.currentThread().getName() + "responding to " + call
-                                + "Wrote partial " + numBytes + "bytes.");
+                        LOG.debug(Thread.currentThread().getName() + " responding to " + call
+                                + " Wrote partial " + numBytes + " bytes.");
                     }
                 }
                 error = false;
@@ -865,7 +863,7 @@ public abstract class Server {
                     closeConnection(call.connection);
                 }
             }
-            return true;
+            return done;
         }
 
         private synchronized void incPending(){
@@ -1058,8 +1056,8 @@ public abstract class Server {
                     /** 对建立连接的头信息进行有效性检查 */
                     connectionHeaderHeaderBuf.flip();
                     if (!RPCConstants.HEADER.equals(connectionHeaderHeaderBuf)){
-                        LOG.warn("Incorrect header from" +
-                                hostAddress + ":" + remotePort);
+                        LOG.warn("Incorrect header from " +
+                                hostAddress + " : " + remotePort);
                         return -1;
                     }
 
@@ -1330,7 +1328,7 @@ public abstract class Server {
         final private int maxIdleToClose;
 
         ConnectionManager(){
-            this.idleScanTimer = new Timer("IPC Server idle connection scanner for port" + port, true);
+            this.idleScanTimer = new Timer("IPC Server idle connection scanner for port " + port, true);
             this.idleScanInterval = conf.getInt(
                     CommonConfigurationKeysPublic.IPC_CLIENT_CONNECTION_IDLESCANINTERVAL_KEY,
                     CommonConfigurationKeysPublic.IPC_CLIENT_CONNECTION_IDLESCANINTERVAL_DEFAULT);

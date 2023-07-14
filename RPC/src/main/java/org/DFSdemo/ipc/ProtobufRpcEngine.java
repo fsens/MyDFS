@@ -138,7 +138,7 @@ public class ProtobufRpcEngine implements RpcEngine{
 
             if (LOG.isDebugEnabled()){
                 long callTime = System.currentTimeMillis() - startTime;
-                LOG.debug("Call: " + method.getName() + "took" + callTime + "ms");
+                LOG.debug("Call: " + method.getName() + "took " + callTime + " ms");
             }
 
             //处理远程调用的返回值
