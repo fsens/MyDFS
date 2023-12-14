@@ -52,5 +52,16 @@ declaringClassProtocolName：协议接口名
 
 ### rpc结果信息
 ```
+------------------Header--------------------
+callId：唯一标识一个client发来的call
+clientId：唯一标识客户端
+status ：Rpc调用的状态( SUCCESS/ERROR/FATAL)
+exceptionClassName：异常类类名
+errorMsg：错误的栈踪
+errorDetail：定义一些具体的错误信息
+retryCount：一个call的重试次数
+
+-----------------Content---------------------
+具体的返回值
 
 ```
