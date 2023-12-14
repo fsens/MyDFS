@@ -58,7 +58,7 @@ clientId：唯一标识客户端
 status ：Rpc调用的状态( SUCCESS/ERROR/FATAL)
 exceptionClassName：异常类类名
 errorMsg：错误的栈踪
-errorDetail：定义一些具体的错误信息
+errorDetail：定义的一些具体的错误信息
 retryCount：一个call的重试次数
 
 -----------------Content---------------------
