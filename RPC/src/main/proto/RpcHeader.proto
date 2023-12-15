@@ -12,7 +12,7 @@ package org.DFSdemo.ipc.protobuf;
 
 enum RpcKindPtoto{
   RPC_BUILDIN = 0;//内部使用，为了占位
-  RPC_PROTOCOL_BUFFER = 1;//使用ProtobufRpcEngine
+  RPC_PROTOCOL_BUFFER = 1;//使用Protobuf的序列化方式
 }
 
 /**
@@ -20,17 +20,18 @@ enum RpcKindPtoto{
  */
 message RpcRequestHeaderProto{
   //RPC请求头
+  
   enum OperationProto{
-    RPC_FINAL_PACKET = 0;//最终的rpc包
+    RPC_FINAL_PACKET = 0;//最后一个rpc包
     RPC_CONTINUATION_PACKET = 1;//尚未完成的rpc包
     RPC_CLOSE_CONNECTION = 2;//关闭rpc连接
   }
 
   optional RpcKindPtoto rpcKind = 1;
   optional OperationProto rpcOp = 2;
-  optional sint32 callId = 3;//在返回中会含有该值
+  optional sint32 callId = 3;//该callId是由客户端生成的，用于唯一标识call。在返回中会含有该值
   optional bytes clientId = 4;//全局唯一的client ID
-  //clientId + callId 可以唯一确定请求重试的次数；1 意味着第一次重试
+  //clientId + callId 可以唯一确定一个请求，也就可以确定请求重试的次数；1 意味着第一次重试
   optional sint32 retryCount = 5;
 }
 

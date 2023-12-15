@@ -216,8 +216,8 @@ public class ProtobufRpcEngine implements RpcEngine{
     }
 
     /**
-     * 这是一个序列化和反序列化的基类，该类封装了一些基本的属性和序列化/反序列化方法
-     * 由它的子类来满足不同场景的需要
+     * 这是一个序列化和反序列化的基类，该类封装了一些基本的属性和序列化/反序列化方法，由它的子类来满足不同场景的需要。
+     * 之所以定义这样一个类，是为了统一处理所有用Protobuf进行序列化/反序列化的请求。
      *
      * @param <T> 泛型，并且指定了泛型的类需要是GeneratedMessageV3的子类
      */
@@ -231,11 +231,12 @@ public class ProtobufRpcEngine implements RpcEngine{
         Message theRequest;//请求的参数
 
         /**
-         * 用于服务端
+         * 用于服务端。
+         * 服务端的连接会先将请求读出为字节序列，之后由Handler线程反序列化和处理
          */
         byte[] theRequestRead;//序列化后的请求参数
 
-        public BaseRpcMessageWithHeader(){};
+        public BaseRpcMessageWithHeader(){}
 
         public BaseRpcMessageWithHeader(T requestHeader, Message theRequest){
             this.requestHeader = requestHeader;

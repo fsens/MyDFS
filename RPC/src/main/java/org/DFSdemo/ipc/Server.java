@@ -395,7 +395,9 @@ public abstract class Server {
                 /** 将创建的Connection对象conn附着到key上，方便以后根据key获取该对象 */
                 key.attach(conn);
 
+                //由于有多个Reader线程，所以每次accept新的连接时得选一个放入
                 Reader reader = getReader();
+                //放入选定的Reader线程的pendingConnections中
                 reader.addConnection(conn);
             }
         }
@@ -509,6 +511,7 @@ public abstract class Server {
                         //应该避免在队列上阻塞等待，导致后面select方法得不到调用
                         int size = pendingConnections.size();
                         for (int i = 0; i < size; i++){
+                            //take会移除队列中的头元素，也就是说，Reader线程只会对新的连接注册OP_READ
                             Connection conn = pendingConnections.take();
                             /** 每个connection的channel注册OP_READ事件到readSelector上 */
                             /** 第三个参数是“附着物”，附着到key上，以后可以通过key.attachment()获得 */
@@ -842,6 +845,7 @@ public abstract class Server {
                         try {
                             /** 如果writeSelector在select上阻塞，无法成功地register */
                             writeSelector.wakeup();
+                            /** 将该call的connection的channel注册到writeSelector上，注册OP_WRITE事件，并在key上attach该call对象 */
                             channel.register(writeSelector, SelectionKey.OP_WRITE, call);
                         }catch (ClosedChannelException e){
                             done = true;

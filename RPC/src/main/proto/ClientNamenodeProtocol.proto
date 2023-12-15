@@ -7,9 +7,9 @@ syntax = "proto3";
 
 option java_package = "org.DFSdemo.protocol.proto";
 option java_outer_classname = "ClientNamenodeProtocolProtos";
-option java_generic_services = true;
-option java_generate_equals_and_hash = true;
-package org.DFSdemo.protocol.proto;
+option java_generic_services = true;//生成通用的RPC接口。默认是false
+//option java_generate_equals_and_hash = true;没有作用
+package org.DFSdemo.protocol.proto;//会被option java_package覆盖
 
 
 message rename2RequestProto {

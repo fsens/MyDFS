@@ -6,6 +6,7 @@ import java.util.Properties;
 
 /**
  * 这是MyDFS RPC的配置类，程序运行时的配置信息从里面获取
+ * 程序运行时的配置也是set在指定的文件中。注意：这里没有使用store方法进行持久化存储，所以程序运行结束，所有set的值都将丢失
  */
 public class Configuration {
     Properties properties;
