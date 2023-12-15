@@ -16,12 +16,12 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 
 /**
- * 该类是ClientProtocol接口对应的服务器，处理所有ClientProtocol的rpc调用，它单独占据一个RPC进程组
+ * 该类是ClientProtocol接口的实现类，处理所ClientProtocol的rpc调用
  * 它由{@link Namenode}创建、启动和停止
  *
  * 该类主要有两个功能
- * 1.实现Namenode对外提供的接口
- * 2.创建客户端ClientProtocol接口的Server对象并启动
+ * 1.实现Namenode对外提供的额接口
+ * 2.创建Server对象并启动
  */
 public class ClientProtocolRpcServer implements ClientProtocol {
 
@@ -46,7 +46,7 @@ public class ClientProtocolRpcServer implements ClientProtocol {
         /**
          * 创建接口对应的实例：ClientNamenodeProtocolPB.class--clientNamenodePbService
          *
-         * 由于客户端传来方法名、参数等信息，如果是自己寻找服务端对应的方法，得自己编写反射，这样既麻烦，性能又低
+         * 由于客户端传来方法名、参数等信息，如果是自己寻找服务端对应的方法，得自己编写反射，这样即麻烦，性能又低
          * 所以，利用protoBuf提供的newReflectiveBlockingService方法来避免自己编写反射调用
          */
         ClientNamenodeProtocolServerSideTranslatorPB

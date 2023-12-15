@@ -74,7 +74,7 @@ public class Client {
 
         public static byte[] getClientId(){
             UUID uuid = UUID.randomUUID();
-            ByteBuffer byteBuffer = ByteBuffer.wrap(new byte[BYTE_LENGTH]);//通过wrap方法来创建一个新的ByteBuffer
+            ByteBuffer byteBuffer = ByteBuffer.wrap(new byte[BYTE_LENGTH]);//通过warp方法来创建一个新的ByteBuffer
             byteBuffer.putLong(uuid.getMostSignificantBits());
             byteBuffer.putLong(uuid.getLeastSignificantBits());
             return byteBuffer.array();
@@ -340,12 +340,10 @@ public class Client {
      */
     public Writable call(RPC.RpcKind rpcKind, Writable rpcRequest, ConnectionId remoteId, int serviceClass) throws IOException{
         final Call call = createCall(rpcKind, rpcRequest);
-        /** 1.获得连接：remoteId的第一次call调用会建立一次新的连接，之后就复用该连接，除非该连接已关闭
-         *  2.启动receiver线程
-         */
+        /** 每一次call调用都会建立一次新的连接(???不应该这样啊???) */
         Connection connection = getConnection(remoteId, call, serviceClass);
         try {
-            //发送rpc请求，并同步等待rpc请求发送完毕
+            //发送rpc请求
             connection.sendRpcRequest(call);
         }catch (InterruptedException e){
             //发送调用请求被中断后，需要设置当前调用线程的中断标记位
@@ -513,11 +511,12 @@ public class Client {
             this.tcpNoDelay = remoteId.isTcpNoDelay();
             this.doPing = remoteId.isDoPing();
             if (doPing){
-                //TODO：初始化Connection时基于ping决定的逻辑
+
             }
 
             this.pingInterval = remoteId.getPingInterval();
             this.maxRetriesOnSocketTimeouts = remoteId.getMaxRetriesOnSocketTimeouts();
+            this.serviceClass = serviceClass;
             if (LOG.isDebugEnabled()){
                 LOG.debug("The ping interval is " + this.pingInterval + "ms.");
             }
@@ -638,8 +637,8 @@ public class Client {
          */
         private synchronized void setupIOStream(){
             /**
-             * 如果socket不为空，则说明该连接依旧未关闭，或者上一次关闭连接{@link Connection#closeConnection()}时出现了异常
-             * 所以该连接不用再建立或者暂时不能使用
+             * 如果socket不为空，则说明上一次关闭连接{@link Connection#closeConnection()}时出现了异常
+             * 所以该连接暂时不能使用
              */
             if (socket != null || shouldCloseConnection.get()){
                 return;
@@ -659,7 +658,7 @@ public class Client {
 
                 if (doPing){
                     /**
-                     * ping相关 TODO：ping功能待扩展
+                     * ping相关
                      */
                 }
 
@@ -778,11 +777,11 @@ public class Client {
         /**
          * 建立连接后发送的请求头（header）
          * +----------------------------+
-         * |"myrpc" 5 字节               | 与http等其它应用层协议区分开
+         * |"myrpc" 5 字节               |
          * +----------------------------+
-         * |Service Class 1 字节         | 表示服务类型，如客户端与名字节点的RPC、客户端与数据节点的数据传输协议等
+         * |Service Class 1 字节         |
          * +----------------------------+
-         * |AuthProtocol 1 字节          | 客户端的身份认证
+         * |AuthProtocol 1 字节         |
          *
          * @param outStream 输出流
          * @throws IOException

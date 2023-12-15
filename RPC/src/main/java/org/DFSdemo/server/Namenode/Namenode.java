@@ -111,7 +111,6 @@ public class Namenode {
      */
     public static InetSocketAddress getAddress(URI namenodeUri){
         String host = namenodeUri.getHost();
-        //System.out.println(host);
         if (host == null){
             throw new IllegalArgumentException(String.format("Invalid URI for Namenode address: %s has no host", namenodeUri.toString()));
         }

@@ -16,10 +16,7 @@ public class NamenodeClient implements Closeable{
     final ClientProtocol clientProtocol;
 
     public NamenodeClient(URI namenodeUri, Configuration conf) throws IOException {
-        //这里使用ServerProxies来封装服务代理相关的所以方法
         ServerProxies.ProxyInfo<ClientProtocol> proxyInfo = null;
-
-        //System.out.println("这是namenodeUri:" + namenodeUri);
 
         proxyInfo = ServerProxies.createProxy(conf, namenodeUri, ClientProtocol.class);
         this.clientProtocol = proxyInfo.getProxy();

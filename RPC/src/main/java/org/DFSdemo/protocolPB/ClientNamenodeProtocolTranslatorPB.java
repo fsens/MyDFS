@@ -8,8 +8,6 @@ import org.DFSdemo.protocol.proto.ClientNamenodeProtocolProtos.rename2RequestPro
 import java.io.Closeable;
 import java.io.IOException;
 
-import org.DFSdemo.protocol.proto.ClientNamenodeProtocolProtos.rename2ResponseProto;
-
 /**
  * 由于要客户端那里需要代理的是ClientProtocol接口，而序列化后相应的接口是ClientNamenodeProtocolPB，所以需要一共适配器来来将两者进行适配
  */
@@ -66,10 +64,7 @@ public class ClientNamenodeProtocolTranslatorPB implements ClientProtocol, Close
              *第一个为控制器，一般为null
              *第二个才是包装为了rename2RequestProto的请求
              */
-            org.DFSdemo.protocol.proto.ClientNamenodeProtocolProtos.rename2ResponseProto resultPB = rpcProxy.rename2(null, request);
-            boolean result = resultPB.getResult();
-            return  result;
-            //return rpcProxy.rename2(null, request).getResult();
+            return rpcProxy.rename2(null, request).getResult();
         }catch (ServiceException e){
             throw new IOException();
         }

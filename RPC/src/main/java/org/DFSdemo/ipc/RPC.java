@@ -73,7 +73,6 @@ public class RPC {
 
     /**
      * 为协议设置RPC引擎
-     *
      * @param conf 配置
      * @param protocol 协议接口
      * @param engine 实现的引擎
@@ -89,7 +88,6 @@ public class RPC {
 
     /**
      * 根据协议和配置获取该协议对应的RPC引擎
-     *
      * @param protocol 协议接口
      * @param conf 配置
      * @return 传入协议对应的RPC引擎
@@ -114,8 +112,8 @@ public class RPC {
     /**
      * 获取对应协议的名字，优先获得注解中的协议名
      *
-     * @param protocol 协议的Class实例
-     * @return 协议名
+     * @param protocol
+     * @return
      */
     public static String getProtocolName(Class<?> protocol){
         if (protocol == null){
@@ -128,7 +126,6 @@ public class RPC {
 
     /**
      * 获取指定协议的代理对象
-     *
      * @param protocol 协议接口
      * @param address 服务端地址
      * @param conf 配置
