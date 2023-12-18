@@ -13,7 +13,8 @@ RPC框架分为了三层：![image](https://github.com/fsens/MyDFS/assets/958728
 
 一次RPC调用流程：![image](https://github.com/fsens/MyDFS/assets/95872817/976cc54a-1c99-4942-8e1d-4bb6737f58b1)
 
-服务端架构：![image](https://github.com/fsens/MyDFS/assets/95872817/791e96ed-58bc-4c61-a6b6-5569bede7aeb)
+服务端架构：![image](https://github.com/fsens/MyDFS/assets/95872817/6d23f089-b287-4f06-9d2c-b6b19dd5b2bb)
+
 
 ## 三、应用层协议
 ### 1.建立连接发送的信息
