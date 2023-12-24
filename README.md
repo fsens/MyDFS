@@ -19,13 +19,13 @@ RPC框架分为了三层：![image](https://github.com/fsens/MyDFS/assets/958728
 ## 三、应用层协议
 ### 1.建立连接发送的信息
 ```
-------------------Header----------------------
+------------------Header(直接发送)----------------------
 myrpc(5字节)：应用层协议类型，和HTTP等进行区分
 Service Class(1字节)：服务类型，指Client和NameNode，或者DataNode与NameNode等服务
 AuthProtocol(1字节)：客户端身份认证协议
 
 
--------------------Content--------------------
+-------------------Content(由诸如RpcRequestMessageWrapper这样的类包装)--------------------
 ---content header---
 RpcKindPtoto：序列化类型
 OperationProto：指示服务端连接的操作
@@ -39,19 +39,15 @@ protocol：协议接口
 
 ### 2.一次rpc发送的信息
 ```
-------------------Header--------------------
----header header---
+------------------Header(由诸如RpcHeaderProtos.RpcRequestHeaderProto这样的类包装)--------------------
 RpcKindPtoto：序列化类型
 OperationProto：指示服务端连接的操作
 callId：唯一标识一个client发来的call
 clientId：唯一标识客户端
 retryCount：一个call的重试次数
 
----header content---
-protocol：协议接口
 
-
------------------Content---------------------
+-----------------Content(由诸如RpcRequestWrapper这样的类包装)---------------------
 ---content header---
 methodName：方法名
 declaringClassProtocolName：协议接口名
@@ -62,7 +58,7 @@ declaringClassProtocolName：协议接口名
 
 ### 3.rpc结果信息
 ```
-------------------Header--------------------
+------------------Header(由诸如RpcHeaderProtos.RpcResponseHeaderProto这样的类包装)--------------------
 callId：唯一标识一个client发来的call
 clientId：唯一标识客户端
 status ：Rpc调用的状态( SUCCESS/ERROR/FATAL)
@@ -73,7 +69,6 @@ retryCount：一个call的重试次数
 
 -----------------Content---------------------
 具体的返回值
-
 ```
 
 ## 四、效果
